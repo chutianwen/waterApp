@@ -1,79 +1,201 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# Water App - React Native iOS Application
 
-# Getting Started
+## Project Setup
 
->**Note**: Make sure you have completed the [React Native - Environment Setup](https://reactnative.dev/docs/environment-setup) instructions till "Creating a new application" step, before proceeding.
+### Prerequisites
+- Node.js (>=18)
+- Xcode
+- CocoaPods
+- Ruby
 
-## Step 1: Start the Metro Server
-
-First, you will need to start **Metro**, the JavaScript _bundler_ that ships _with_ React Native.
-
-To start Metro, run the following command from the _root_ of your React Native project:
-
+### Initial Project Creation
 ```bash
-# using npm
-npm start
+# Create new React Native project with TypeScript template
+npx react-native init waterApp --template react-native-template-typescript
 
-# OR using Yarn
-yarn start
+If not working, use this:
+npx @react-native-community/cli init waterApp --version 0.73.5
+
+# Navigate to project directory
+cd waterApp
+
+# Install dependencies
+npm install
+
+# Install required navigation and UI dependencies
+npm install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/native-stack react-native-vector-icons react-native-screens react-native-safe-area-context @react-native-async-storage/async-storage
 ```
 
-## Step 2: Start your Application
+### Version Control Setup
+The project includes a comprehensive `.gitignore` file that excludes:
+- Build artifacts and dependencies (`/ios/Pods/`, `node_modules/`)
+- IDE and editor files (`.vscode/`, Xcode userdata)
+- Environment and local config files (`.env`)
+- Temporary and system files (`.DS_Store`)
+- Debug logs and crash reports
+- Test coverage reports
 
-Let Metro Bundler run in its _own_ terminal. Open a _new_ terminal from the _root_ of your React Native project. Run the following command to start your _Android_ or _iOS_ app:
+Make sure to commit the `.gitignore` file first before adding other project files to avoid tracking unnecessary files.
 
-### For Android
-
+### iOS Setup
 ```bash
-# using npm
-npm run android
+# Navigate to iOS directory
+cd ios
 
-# OR using Yarn
-yarn android
+# Install CocoaPods dependencies
+# Some issues of faliures, please refer to flipper error which needs to be disabled through the podfile.
+pod install
+
 ```
 
-### For iOS
-
+### Running the App
 ```bash
-# using npm
-npm run ios
+# Start Metro bundler (in project root)
+npx react-native start
 
-# OR using Yarn
-yarn ios
+# In another terminal, build and run iOS app
+npx react-native run-ios
 ```
 
-If everything is set up _correctly_, you should see your new app running in your _Android Emulator_ or _iOS Simulator_ shortly provided you have set up your emulator/simulator correctly.
+## Common Issues and Solutions
 
-This is one way to run your app — you can also run it directly from within Android Studio and Xcode respectively.
+### 1. CocoaPods Post-Install Hook Error
+**Error:**
+```
+An error occurred while processing the post-install hook of the Podfile.
+undefined method '__apply_Xcode_12_5_M1_post_install_workaround' for an instance of Pod::Podfile
+```
 
-## Step 3: Modifying your App
+**Solution:**
+This error occurs due to an outdated post-install hook in the Podfile. To fix:
+1. Open `ios/Podfile`
+2. Update the post_install hook to remove the outdated M1 workaround:
+```ruby
+post_install do |installer|
+  react_native_post_install(installer)
+end
+```
 
-Now that you have successfully run the app, let's modify it.
+### 2. Metro Bundler Directory Error
+**Error:**
+```
+npm error code ENOENT
+npm error syscall open
+npm error path /Users/.../package.json
+npm error errno -2
+npm error enoent Could not read package.json
+```
 
-1. Open `App.tsx` in your text editor of choice and edit some lines.
-2. For **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Developer Menu** (<kbd>Ctrl</kbd> + <kbd>M</kbd> (on Window and Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (on macOS)) to see your changes!
+**Solution:**
+This occurs when trying to run Metro bundler from the wrong directory. Always ensure you're in the project root directory:
+```bash
+cd /path/to/waterApp
+npx react-native start
+```
 
-   For **iOS**: Hit <kbd>Cmd ⌘</kbd> + <kbd>R</kbd> in your iOS Simulator to reload the app and see your changes!
+### 3. Vector Icons Not Showing
+**Error:**
+Icons appear as squares or are missing in the iOS app.
 
-## Congratulations! :tada:
+**Solution:**
+1. Add RNVectorIcons to Podfile:
+```ruby
+pod 'RNVectorIcons', :path => '../node_modules/react-native-vector-icons'
+```
 
-You've successfully run and modified your React Native App. :partying_face:
+2. Add fonts to Info.plist:
+```xml
+<key>UIAppFonts</key>
+<array>
+  <string>Ionicons.ttf</string>
+</array>
+```
 
-### Now what?
+3. Reinstall pods:
+```bash
+cd ios && pod install
+```
 
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [Introduction to React Native](https://reactnative.dev/docs/getting-started).
+### 4. FlipperKit Build Error
+**Error:**
+```
+The following build commands failed:
+CompileC [...]/FlipperKit.build/Debug-iphonesimulator/FlipperKit.build/Objects-normal/arm64/FlipperPlatformWebSocket.o [...]/FlipperKit/iOS/FlipperKit/FlipperPlatformWebSocket.mm normal arm64 objective-c++ com.apple.compilers.llvm.clang.1_0.compiler
+```
 
-# Troubleshooting
+**Solution:**
+This error occurs due to Flipper compatibility issues with newer iOS versions. To fix:
+1. Open `ios/Podfile`
+2. Replace the Flipper configuration with:
+```ruby
+# Disable Flipper
+use_frameworks! :linkage => :static
 
-If you can't get this to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
+target 'YourAppName' do
+  config = use_native_modules!
 
-# Learn More
+  use_react_native!(
+    :path => config[:reactNativePath],
+    # Disable Flipper
+    :flipper_configuration => FlipperConfiguration.disabled,
+    # An absolute path to your application root.
+    :app_path => "#{Pod::Config.instance.installation_root}/.."
+  )
+  # ... rest of your Podfile
+end
+```
+3. Clean and reinstall pods:
+```bash
+cd ios
+rm -rf Pods Podfile.lock
+pod install
+```
 
-To learn more about React Native, take a look at the following resources:
+Note: Flipper is a debugging tool, and disabling it won't affect your app's functionality.
 
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+## Development Tips
+
+### Hot Reloading
+- The app supports hot reloading by default
+- Changes to your React Native code will automatically reflect in the simulator
+- If changes don't appear, try reloading the app (Cmd + R in simulator)
+
+### iOS Simulator
+- The app will launch in the default iOS simulator
+- You can specify a different simulator using the --simulator flag:
+```bash
+npx react-native run-ios --simulator="iPhone 14 Pro"
+```
+
+## Project Structure
+```
+waterApp/
+├── ios/                # iOS native code
+├── android/            # Android native code
+├── src/               # React Native source code
+│   ├── screens/       # Screen components
+│   ├── services/      # Business logic and API services
+│   └── types/         # TypeScript type definitions
+├── __tests__/         # Test files
+├── node_modules/      # Dependencies
+├── package.json       # Project configuration
+└── README.md         # Project documentation
+```
+
+## Dependencies
+- React Native: 0.73.5
+- React: 18.2.0
+- TypeScript: 5.0.4
+- React Navigation: 6.x
+- React Native Vector Icons: 10.2.0
+- AsyncStorage: 2.1.0
+
+## Contributing
+1. Fork the repository
+2. Create your feature branch
+3. Commit your changes
+4. Push to the branch
+5. Create a Pull Request
+
+## License
+This project is licensed under the MIT License - see the LICENSE file for details
