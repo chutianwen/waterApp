@@ -16,13 +16,12 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Customer} from '../types/customer';
 import {Transaction} from '../types/transaction';
 import {RootStackParamList} from '../types/navigation';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import {STORAGE_KEYS} from './SettingsScreen';
+import * as storage from '../services/storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ScreenRouteProp = RouteProp<RootStackParamList, 'New Transaction'>;
 
-type TransactionType = 'regular' | 'alkaline' | 'fund';
+type TransactionType = Transaction['type'];
 
 const NewTransactionScreen = () => {
   const navigation = useNavigation<NavigationProp>();
@@ -37,15 +36,13 @@ const NewTransactionScreen = () => {
   const [regularPrice, setRegularPrice] = useState(1.50);
   const [alkalinePrice, setAlkalinePrice] = useState(2.00);
   
-  // Load saved prices when component mounts
+  // Load saved prices when component mounts or comes into focus
   React.useEffect(() => {
     const loadPrices = async () => {
       try {
-        const savedRegularPrice = await AsyncStorage.getItem(STORAGE_KEYS.REGULAR_WATER_PRICE);
-        const savedAlkalinePrice = await AsyncStorage.getItem(STORAGE_KEYS.ALKALINE_WATER_PRICE);
-        
-        if (savedRegularPrice) setRegularPrice(parseFloat(savedRegularPrice));
-        if (savedAlkalinePrice) setAlkalinePrice(parseFloat(savedAlkalinePrice));
+        const prices = await storage.getWaterPrices();
+        setRegularPrice(prices.regularPrice);
+        setAlkalinePrice(prices.alkalinePrice);
       } catch (error) {
         console.error('Error loading prices:', error);
       }
@@ -64,7 +61,10 @@ const NewTransactionScreen = () => {
     parseFloat(fundAmount) || 0 : 
     adjustedAmount ? parseFloat(adjustedAmount) : calculatedAmount;
 
-  // Update adjusted amount when calculated amount changes
+  const isBalanceSufficient = transactionType === 'fund' || customer.balance >= totalAmount;
+  const requiredFunds = !isBalanceSufficient ? (totalAmount - customer.balance).toFixed(2) : '0';
+
+  // Update amount when calculated amount changes
   React.useEffect(() => {
     if (!adjustedAmount || parseFloat(adjustedAmount) === calculatedAmount) {
       setAdjustedAmount(calculatedAmount.toFixed(2));
@@ -134,6 +134,25 @@ const NewTransactionScreen = () => {
       return;
     }
 
+    // Check if customer has sufficient balance for water purchase
+    if (!isBalanceSufficient) {
+      Alert.alert(
+        'Insufficient Balance',
+        `This customer's balance ($${customer.balance.toFixed(2)}) is not sufficient for this transaction ($${totalAmount.toFixed(2)}).\n\nRequired additional funds: $${requiredFunds}`,
+        [
+          {
+            text: 'Add Funds',
+            onPress: () => setTransactionType('fund'),
+          },
+          {
+            text: 'Cancel',
+            style: 'cancel',
+          },
+        ],
+      );
+      return;
+    }
+
     const isDuplicate = checkDuplicateTransaction();
     if (isDuplicate) {
       Alert.alert(
@@ -155,50 +174,52 @@ const NewTransactionScreen = () => {
     }
   };
 
-  const createTransaction = () => {
-    const waterTypeLabel = transactionType === 'regular' ? 'Regular Water' : 
-                          transactionType === 'alkaline' ? 'Alkaline Water' : 
-                          'Fund Load';
+  const createTransaction = async () => {
+    try {
+      const newTransaction = {
+        customerId: customer.id,
+        type: transactionType as Transaction['type'],
+        amount: totalAmount,
+        customerBalance: customer.balance + (transactionType === 'fund' ? totalAmount : -totalAmount),
+        notes: note,
+        gallons: transactionType === 'fund' ? undefined : gallons,
+      };
 
-    const newTransaction: Transaction = {
-      id: Date.now().toString(),
-      date: new Date().toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      }),
-      time: new Date().toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: 'numeric',
-        hour12: true,
-      }),
-      waterType: waterTypeLabel,
-      gallons: transactionType === 'fund' ? 0 : gallons,
-      amount: totalAmount,
-      customerName: customer.name,
-      customerBalance: customer.balance + (transactionType === 'fund' ? totalAmount : -totalAmount),
-      status: 'Just Completed',
-    };
+      // Always create a transaction record
+      await storage.addTransaction(newTransaction);
 
-    // Reset form for next transaction
-    if (transactionType === 'fund') {
-      setFundAmount('');
-    } else {
-      setGallons(5);
-      setAdjustedAmount('');
+      // For fund transactions, also update the customer's balance
+      if (transactionType === 'fund') {
+        await storage.updateCustomer(customer.id, {
+          balance: customer.balance + totalAmount,
+          lastTransaction: new Date().toISOString(),
+        });
+      }
+
+      // Reset form for next transaction
+      if (transactionType === 'fund') {
+        setFundAmount('');
+      } else {
+        setGallons(5);
+        setAdjustedAmount('');
+      }
+      setNote('');
+
+      Alert.alert(
+        'Success',
+        'Transaction completed successfully!\nYou can start a new transaction or close this screen.',
+        [
+          {
+            text: 'OK',
+            style: 'default',
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      );
+    } catch (error) {
+      console.error('Error creating transaction:', error);
+      Alert.alert('Error', 'Failed to complete transaction. Please try again.');
     }
-    setNote('');
-
-    Alert.alert(
-      'Success',
-      'Transaction completed successfully!\nYou can start a new transaction or close this screen.',
-      [
-        {
-          text: 'OK',
-          style: 'default',
-        },
-      ],
-    );
   };
 
   if (!customer) {
@@ -220,7 +241,17 @@ const NewTransactionScreen = () => {
           />
           <View style={styles.profileInfo}>
             <Text style={styles.profileName}>{customer.name}</Text>
-            <Text style={styles.profileBalance}>Balance: ${customer.balance.toFixed(2)}</Text>
+            <Text style={[
+              styles.profileBalance,
+              !isBalanceSufficient && styles.insufficientBalance
+            ]}>
+              Balance: ${customer.balance.toFixed(2)}
+              {!isBalanceSufficient && (transactionType === 'regular' || transactionType === 'alkaline') && (
+                <Text style={styles.warningText}>
+                  {`\nNeeds $${requiredFunds} more for this transaction`}
+                </Text>
+              )}
+            </Text>
           </View>
         </View>
 
@@ -571,6 +602,14 @@ const styles = StyleSheet.create({
   },
   fundCompleteButton: {
     backgroundColor: '#34C759',
+  },
+  insufficientBalance: {
+    color: '#FF3B30',
+  },
+  warningText: {
+    fontSize: 12,
+    color: '#FF3B30',
+    fontStyle: 'italic',
   },
 });
 

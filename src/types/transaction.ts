@@ -1,11 +1,10 @@
 export interface Transaction {
-  id: string;
-  date: string;
-  time: string;
-  waterType: string;
-  gallons: number;
-  amount: number;
-  customerName: string;
+  id?: string;
+  customerId: string;
   customerBalance: number;
-  status?: 'Just Completed' | 'Completed';
+  amount: number;
+  type: 'regular' | 'alkaline' | 'fund';
+  gallons?: number;
+  createdAt?: string;
+  notes?: string;
 } 

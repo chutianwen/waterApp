@@ -11,6 +11,7 @@ import {
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../types/navigation';
+import * as storage from '../services/storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -19,7 +20,7 @@ const NewCustomerScreen = () => {
   const [name, setName] = useState('');
   const [initialFund, setInitialFund] = useState('');
 
-  const handleCreateCustomer = () => {
+  const handleCreateCustomer = async () => {
     if (!name.trim()) {
       Alert.alert('Error', 'Please enter customer name');
       return;
@@ -31,24 +32,28 @@ const NewCustomerScreen = () => {
       return;
     }
 
-    const newCustomer = {
-      id: Date.now().toString(),
-      name: name.trim(),
-      balance: fundAmount,
-      lastTransaction: 'New Customer',
-    };
+    try {
+      const newCustomer = {
+        name: name.trim(),
+        balance: fundAmount,
+        lastTransaction: 'New Customer',
+      };
 
-    // TODO: Add customer to the list
-    Alert.alert(
-      'Success',
-      'Customer created successfully!',
-      [
-        {
-          text: 'OK',
-          onPress: () => navigation.goBack(),
-        },
-      ],
-    );
+      await storage.addCustomer(newCustomer);
+      Alert.alert(
+        'Success',
+        'Customer created successfully!',
+        [
+          {
+            text: 'OK',
+            onPress: () => navigation.goBack(),
+          },
+        ],
+      );
+    } catch (error) {
+      console.error('Error creating customer:', error);
+      Alert.alert('Error', 'Failed to create customer. Please try again.');
+    }
   };
 
   return (

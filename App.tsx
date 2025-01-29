@@ -21,6 +21,18 @@ import NewCustomerScreen from './src/screens/NewCustomerScreen';
 const Tab = createBottomTabNavigator();
 const Stack = createNativeStackNavigator();
 
+const HistoryStack = () => {
+  return (
+    <Stack.Navigator>
+      <Stack.Screen 
+        name="TransactionList" 
+        component={TransactionScreen}
+        options={{headerShown: false}}
+      />
+    </Stack.Navigator>
+  );
+};
+
 const TabNavigator = () => {
   return (
     <Tab.Navigator
@@ -53,7 +65,11 @@ const TabNavigator = () => {
         component={CustomersScreen}
         options={{title: 'Customers'}}
       />
-      <Tab.Screen name="History" component={TransactionScreen} />
+      <Tab.Screen 
+        name="History" 
+        component={HistoryStack}
+        options={{title: 'History'}} 
+      />
       <Tab.Screen name="Settings" component={SettingsScreen} />
     </Tab.Navigator>
   );

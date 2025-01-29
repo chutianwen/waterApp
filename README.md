@@ -57,6 +57,35 @@ npx react-native start
 npx react-native run-ios
 ```
 
+### Firebase Setup
+```bash
+# Install Firebase dependencies
+npm install @react-native-firebase/app @react-native-firebase/firestore @react-native-firebase/auth
+```
+
+#### iOS Firebase Setup
+1. Get your `GoogleService-Info.plist` from Firebase Console
+2. Place it in `ios/waterApp/`
+3. Add it to Xcode project:
+   - Open Xcode
+   - Right-click on your project's "waterApp" folder
+   - "Add Files to 'waterApp'"
+   - Select GoogleService-Info.plist
+   - Ensure "Copy items if needed" is checked
+   - Add to your main app target
+
+4. Update Podfile with Firebase configurations:
+```ruby
+pod 'FirebaseCore', :modular_headers => true
+pod 'FirebaseCoreInternal', :modular_headers => true
+pod 'GoogleUtilities', :modular_headers => true
+```
+
+5. Install pods:
+```bash
+cd ios && pod install
+```
+
 ## Common Issues and Solutions
 
 ### 1. CocoaPods Post-Install Hook Error
@@ -189,6 +218,9 @@ waterApp/
 - React Navigation: 6.x
 - React Native Vector Icons: 10.2.0
 - AsyncStorage: 2.1.0
+- Firebase Core: latest
+- Firebase Firestore: latest
+- Firebase Auth: latest
 
 ## Contributing
 1. Fork the repository
@@ -199,3 +231,7 @@ waterApp/
 
 ## License
 This project is licensed under the MIT License - see the LICENSE file for details
+
+
+data in the simulator:
+`find ~/Library/Developer/CoreSimulator -name "waterapp_data" 2>/dev/null`

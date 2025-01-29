@@ -5,229 +5,255 @@ import {
   Text,
   View,
   TextInput,
-  TouchableOpacity,
   FlatList,
-  Modal,
-  ScrollView,
+  ActivityIndicator,
+  RefreshControl,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Transaction} from '../types/transaction';
+import * as storage from '../services/storage';
+import {useRoute} from '@react-navigation/native';
+import {useFocusEffect} from '@react-navigation/native';
+import type {RouteProp} from '@react-navigation/native';
+import {RootStackParamList} from '../types/navigation';
+import {Customer} from '../types/customer';
 
-// Mock data for transactions
-const initialTransactions: Transaction[] = [
-  {
-    id: '1',
-    date: 'Mar 15, 2024',
-    time: '2:30 PM',
-    waterType: 'Purified Water',
-    gallons: 5,
-    amount: 25.00,
-    customerName: 'Emma Thompson',
-    customerBalance: 150.00,
-    status: 'Just Completed',
-  },
-  {
-    id: '2',
-    date: 'Mar 14, 2024',
-    time: '11:45 AM',
-    waterType: 'Spring Water',
-    gallons: 3,
-    amount: 15.00,
-    customerName: 'Michael Chen',
-    customerBalance: 85.00,
-  },
-  {
-    id: '3',
-    date: 'Mar 13, 2024',
-    time: '9:15 AM',
-    waterType: 'Alkaline Water',
-    gallons: 4,
-    amount: 24.00,
-    customerName: 'Sarah Williams',
-    customerBalance: 210.00,
-  },
-  {
-    id: '4',
-    date: 'Mar 12, 2024',
-    time: '3:20 PM',
-    waterType: 'Mineral Water',
-    gallons: 6,
-    amount: 30.00,
-    customerName: 'James Rodriguez',
-    customerBalance: 175.00,
-  },
-  {
-    id: '5',
-    date: 'Mar 11, 2024',
-    time: '1:00 PM',
-    waterType: 'Purified Water',
-    gallons: 2,
-    amount: 10.00,
-    customerName: 'Linda Martinez',
-    customerBalance: 95.00,
-  },
-];
+type TransactionScreenRouteProp = RouteProp<RootStackParamList, 'History'>;
+
+const PAGE_SIZE = 20;
 
 const TransactionScreen = () => {
-  const [transactions, setTransactions] = useState<Transaction[]>(initialTransactions);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [filters, setFilters] = useState({
-    minAmount: '',
-    maxAmount: '',
-    customerName: '',
-    startDate: '',
-    endDate: '',
-  });
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(1);
+  const route = useRoute<TransactionScreenRouteProp>();
 
-  const applyFilters = (transaction: Transaction): boolean => {
-    const matchesName = filters.customerName
-      ? transaction.customerName.toLowerCase().includes(filters.customerName.toLowerCase())
-      : true;
+  // Load data when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      loadInitialData();
+    }, [])
+  );
 
-    const matchesMinAmount = filters.minAmount
-      ? transaction.amount >= parseFloat(filters.minAmount)
-      : true;
-
-    const matchesMaxAmount = filters.maxAmount
-      ? transaction.amount <= parseFloat(filters.maxAmount)
-      : true;
-
-    return matchesName && matchesMinAmount && matchesMaxAmount;
+  const loadInitialData = async () => {
+    setPage(1);
+    setHasMore(true);
+    await loadData(1, true);
   };
 
-  const filteredTransactions = transactions.filter(applyFilters);
+  const loadData = async (pageNum: number, isRefresh: boolean = false) => {
+    try {
+      if (isRefresh) {
+        setRefreshing(true);
+      } else if (pageNum === 1) {
+        setLoading(true);
+      }
 
-  const handleUndo = (transactionId: string) => {
-    // Implement undo logic here
-    console.log('Undo transaction:', transactionId);
+      // Load customers first
+      const loadedCustomers = await storage.getCustomers();
+      setCustomers(loadedCustomers);
+
+      // Then load transactions
+      let loadedTransactions;
+      const customerId = route.params?.params?.customer?.id;
+      
+      if (customerId) {
+        // Load transactions for specific customer
+        loadedTransactions = await storage.getCustomerTransactions(customerId, pageNum, PAGE_SIZE);
+      } else {
+        // Load all transactions for the main history tab
+        loadedTransactions = await storage.getCustomerTransactions('all', pageNum, PAGE_SIZE);
+      }
+
+      // Sort transactions by date (most recent first)
+      loadedTransactions.sort((a, b) => {
+        const dateA = new Date(a.createdAt || 0);
+        const dateB = new Date(b.createdAt || 0);
+        return dateB.getTime() - dateA.getTime();
+      });
+
+      // Filter transactions based on search query
+      const filteredTransactions = filterTransactions(loadedTransactions);
+
+      if (isRefresh || pageNum === 1) {
+        setTransactions(filteredTransactions);
+      } else {
+        setTransactions(prev => [...prev, ...filteredTransactions]);
+      }
+
+      setHasMore(filteredTransactions.length === PAGE_SIZE);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
+
+  const filterTransactions = (transactionList: Transaction[]): Transaction[] => {
+    if (!searchQuery.trim()) return transactionList;
+
+    const query = searchQuery.toLowerCase().trim();
+    return transactionList.filter(transaction => {
+      const customer = customers.find(c => c.id === transaction.customerId);
+      if (!customer) return false;
+
+      // Search by customer name
+      const nameMatch = customer.name.toLowerCase().includes(query);
+      
+      // Search by customer ID
+      const idMatch = customer.uniqueId.includes(query);
+      
+      // Search by amount
+      const amountString = transaction.amount.toFixed(2);
+      const amountMatch = amountString.includes(query);
+      
+      // Search by transaction type
+      const typeMatch = transaction.type.toLowerCase().includes(query);
+      
+      // Search by date
+      const date = new Date(transaction.createdAt || 0);
+      const dateString = date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      }).toLowerCase();
+      const dateMatch = dateString.includes(query);
+
+      return nameMatch || idMatch || amountMatch || typeMatch || dateMatch;
+    });
+  };
+
+  const handleLoadMore = () => {
+    if (!loading && hasMore) {
+      const nextPage = page + 1;
+      setPage(nextPage);
+      loadData(nextPage);
+    }
+  };
+
+  const handleRefresh = () => {
+    loadInitialData();
+  };
+
+  const handleSearch = (text: string) => {
+    setSearchQuery(text);
+    setPage(1);
+    loadInitialData();
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: 'numeric',
+      hour12: true,
+    });
   };
 
   const renderTransactionItem = ({item}: {item: Transaction}) => (
-    <View style={[styles.transactionCard, item.status === 'Just Completed' && styles.justCompletedCard]}>
+    <View style={styles.transactionItem}>
       <View style={styles.transactionHeader}>
         <View>
-          {item.status === 'Just Completed' && (
-            <View style={styles.statusBadge}>
-              <Text style={styles.statusText}>Just Completed</Text>
-            </View>
-          )}
-          <Text style={styles.dateText}>{item.date}</Text>
-          <Text style={styles.timeText}>{item.time}</Text>
+          <Text style={styles.date}>{formatDate(item.createdAt || '')}</Text>
+          <Text style={styles.time}>{formatTime(item.createdAt || '')}</Text>
         </View>
-        <View style={styles.amountContainer}>
-          <Text style={styles.amountText}>${item.amount.toFixed(2)}</Text>
-          <TouchableOpacity
-            style={styles.undoButton}
-            onPress={() => handleUndo(item.id)}>
-            <Icon name="arrow-undo" size={16} color="#FF3B30" />
-            <Text style={styles.undoText}>Undo</Text>
-          </TouchableOpacity>
-        </View>
+        <Text style={[styles.amount, item.type === 'fund' && styles.fundAmount]}>
+          {item.type === 'fund' ? '+' : '-'}${item.amount.toFixed(2)}
+        </Text>
       </View>
-
       <View style={styles.transactionDetails}>
-        <View style={styles.detailRow}>
-          <Text style={styles.waterType}>{item.waterType}</Text>
-          <Text style={styles.gallons}>{item.gallons} gallons</Text>
+        <View style={styles.detailsLeft}>
+          <View style={styles.customerInfo}>
+            <Text style={styles.customerName}>
+              {customers.find(c => c.id === item.customerId)?.name || 'Unknown Customer'}
+            </Text>
+            <Text style={styles.customerId}>
+              #{customers.find(c => c.id === item.customerId)?.uniqueId || ''}
+            </Text>
+          </View>
+          <Text style={styles.type}>
+            {item.type === 'fund' ? 'Fund Added' : 
+             `${item.type === 'regular' ? 'Regular' : 'Alkaline'} Water - ${item.gallons || 0} gallons`}
+          </Text>
         </View>
-        <View style={styles.customerInfo}>
-          <Text style={styles.customerName}>{item.customerName}</Text>
-          <Text style={styles.balanceText}>Balance: ${item.customerBalance.toFixed(2)}</Text>
-        </View>
+        <Text style={styles.balance}>
+          Balance: ${item.customerBalance.toFixed(2)}
+        </Text>
       </View>
+      {item.notes && (
+        <Text style={styles.notes}>{item.notes}</Text>
+      )}
     </View>
   );
 
-  const renderFilterModal = () => (
-    <Modal
-      visible={showFilters}
-      animationType="slide"
-      transparent={true}
-      onRequestClose={() => setShowFilters(false)}>
-      <View style={styles.modalContainer}>
-        <View style={styles.modalContent}>
-          <View style={styles.modalHeader}>
-            <Text style={styles.modalTitle}>Filter Transactions</Text>
-            <TouchableOpacity onPress={() => setShowFilters(false)}>
-              <Icon name="close" size={24} color="#333" />
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.filterForm}>
-            <Text style={styles.filterLabel}>Amount Range</Text>
-            <View style={styles.rangeInputs}>
-              <TextInput
-                style={[styles.filterInput, styles.rangeInput]}
-                placeholder="Min"
-                value={filters.minAmount}
-                onChangeText={(text) => setFilters({...filters, minAmount: text})}
-                keyboardType="decimal-pad"
-              />
-              <Text style={styles.rangeSeparator}>to</Text>
-              <TextInput
-                style={[styles.filterInput, styles.rangeInput]}
-                placeholder="Max"
-                value={filters.maxAmount}
-                onChangeText={(text) => setFilters({...filters, maxAmount: text})}
-                keyboardType="decimal-pad"
-              />
-            </View>
-
-            <Text style={styles.filterLabel}>Customer Name</Text>
-            <TextInput
-              style={styles.filterInput}
-              placeholder="Enter customer name"
-              value={filters.customerName}
-              onChangeText={(text) => setFilters({...filters, customerName: text})}
-            />
-
-            <View style={styles.filterActions}>
-              <TouchableOpacity
-                style={[styles.filterButton, styles.resetButton]}
-                onPress={() => {
-                  setFilters({
-                    minAmount: '',
-                    maxAmount: '',
-                    customerName: '',
-                    startDate: '',
-                    endDate: '',
-                  });
-                }}>
-                <Text style={styles.resetButtonText}>Reset</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.filterButton, styles.applyButton]}
-                onPress={() => setShowFilters(false)}>
-                <Text style={styles.applyButtonText}>Apply Filters</Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
-        </View>
+  const renderFooter = () => {
+    if (!loading || refreshing) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color="#007AFF" />
       </View>
-    </Modal>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>History</Text>
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setShowFilters(true)}>
-          <Icon name="options-outline" size={24} color="#333" />
-        </TouchableOpacity>
+        <Text style={styles.title}>
+          {route.params?.params?.customer ? `${route.params.params.customer.name}'s Transactions` : 'Transaction History'}
+        </Text>
       </View>
 
-      <FlatList
-        data={filteredTransactions}
-        renderItem={renderTransactionItem}
-        keyExtractor={item => item.id}
-        contentContainerStyle={styles.transactionList}
-        showsVerticalScrollIndicator={false}
-      />
+      <View style={styles.searchContainer}>
+        <View style={styles.searchInputContainer}>
+          <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Search by name, ID, amount, or date"
+            value={searchQuery}
+            onChangeText={handleSearch}
+            returnKeyType="search"
+            clearButtonMode="while-editing"
+          />
+        </View>
+      </View>
 
-      {renderFilterModal()}
+      {loading && page === 1 ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      ) : (
+        <FlatList
+          data={transactions}
+          renderItem={renderTransactionItem}
+          keyExtractor={item => item.id || ''}
+          contentContainerStyle={styles.listContainer}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              colors={['#007AFF']}
+            />
+          }
+          onEndReached={handleLoadMore}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+        />
+      )}
     </SafeAreaView>
   );
 };
@@ -236,191 +262,112 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
+    padding: 16,
   },
   header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 16,
+    marginBottom: 20,
   },
   title: {
     fontSize: 28,
     fontWeight: '700',
     color: '#333',
   },
-  transactionList: {
-    padding: 16,
+  searchContainer: {
+    marginBottom: 16,
+  },
+  searchInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    height: 44,
+    fontSize: 16,
+    color: '#333',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  listContainer: {
     gap: 12,
   },
-  transactionCard: {
+  transactionItem: {
     backgroundColor: '#FFF',
     borderRadius: 12,
     padding: 16,
-    shadowColor: '#000',
-    shadowOffset: {width: 0, height: 2},
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  justCompletedCard: {
-    backgroundColor: '#EBF5FF',
   },
   transactionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    alignItems: 'flex-start',
+    marginBottom: 8,
   },
-  statusBadge: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 12,
-    marginBottom: 4,
-    alignSelf: 'flex-start',
-  },
-  statusText: {
-    color: '#FFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  dateText: {
+  date: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
   },
-  timeText: {
+  time: {
     fontSize: 14,
     color: '#666',
     marginTop: 2,
   },
-  amountContainer: {
-    alignItems: 'flex-end',
-  },
-  amountText: {
+  amount: {
     fontSize: 18,
-    fontWeight: '700',
+    fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
-  },
-  undoButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  undoText: {
-    color: '#FF3B30',
-    fontSize: 14,
-    fontWeight: '500',
   },
   transactionDetails: {
-    borderTopWidth: 1,
-    borderTopColor: '#E5E5EA',
-    paddingTop: 12,
-  },
-  detailRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  waterType: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  gallons: {
-    fontSize: 16,
-    color: '#666',
-  },
-  customerInfo: {
-    marginTop: 4,
-  },
-  customerName: {
-    fontSize: 14,
-    color: '#666',
-  },
-  balanceText: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  modalContainer: {
-    flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'flex-end',
-  },
-  modalContent: {
-    backgroundColor: '#FFF',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 20,
-    maxHeight: '80%',
-  },
-  modalHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 20,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: '600',
-    color: '#333',
-  },
-  filterForm: {
-    flex: 1,
-  },
-  filterLabel: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
     marginBottom: 8,
   },
-  filterInput: {
-    backgroundColor: '#F8F9FA',
-    borderRadius: 8,
-    padding: 12,
-    marginBottom: 16,
-    fontSize: 16,
+  detailsLeft: {
+    flex: 1,
   },
-  rangeInputs: {
+  customerInfo: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    marginBottom: 16,
+    marginBottom: 4,
   },
-  rangeInput: {
-    flex: 1,
-    marginBottom: 0,
+  customerName: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
   },
-  rangeSeparator: {
+  customerId: {
+    fontSize: 14,
     color: '#666',
   },
-  filterActions: {
-    flexDirection: 'row',
-    gap: 12,
-    marginTop: 8,
+  type: {
+    fontSize: 14,
+    color: '#666',
   },
-  filterButton: {
-    flex: 1,
-    padding: 16,
-    borderRadius: 12,
+  balance: {
+    fontSize: 14,
+    color: '#666',
+  },
+  fundAmount: {
+    color: '#34C759',
+  },
+  notes: {
+    fontSize: 14,
+    color: '#666',
+    fontStyle: 'italic',
+  },
+  footerLoader: {
+    paddingVertical: 16,
     alignItems: 'center',
-  },
-  resetButton: {
-    backgroundColor: '#F8F9FA',
-  },
-  applyButton: {
-    backgroundColor: '#007AFF',
-  },
-  resetButtonText: {
-    color: '#333',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  applyButtonText: {
-    color: '#FFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

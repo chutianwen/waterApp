@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -8,61 +8,50 @@ import {
   TouchableOpacity,
   FlatList,
   Modal,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import {useNavigation} from '@react-navigation/native';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Customer} from '../types/customer';
 import {RootStackParamList} from '../types/navigation';
+import * as storage from '../services/storage';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
-
-// Mock data for customers
-const initialCustomers: Customer[] = [
-  {
-    id: '1',
-    name: 'Alexander Thompson',
-    balance: 250.00,
-    lastTransaction: 'Today',
-  },
-  {
-    id: '2',
-    name: 'Benjamin Walker',
-    balance: 85.50,
-    lastTransaction: 'Yesterday',
-  },
-  {
-    id: '3',
-    name: 'Catherine Martinez',
-    balance: 20.75,
-    lastTransaction: '2 days ago',
-  },
-  {
-    id: '4',
-    name: 'Daniel Richardson',
-    balance: 75.25,
-    lastTransaction: '3 days ago',
-  },
-  {
-    id: '5',
-    name: 'Elizabeth Anderson',
-    balance: 150.00,
-    lastTransaction: '4 days ago',
-  },
-];
 
 const CustomersScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [searchQuery, setSearchQuery] = useState('');
-  const [customers, setCustomers] = useState<Customer[]>(initialCustomers);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [loading, setLoading] = useState(true);
   const [sortOrder, setSortOrder] = useState('Alphabetical');
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
 
+  // Load customers when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      const loadCustomers = async () => {
+        try {
+          setLoading(true);
+          const loadedCustomers = await storage.getCustomers();
+          setCustomers(loadedCustomers);
+        } catch (error) {
+          console.error('Error loading customers:', error);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      loadCustomers();
+    }, [])
+  );
+
   const filteredCustomers = customers.filter(customer =>
     customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    customer.uniqueId.includes(searchQuery) ||
     customer.balance.toString().includes(searchQuery) ||
-    customer.lastTransaction.toLowerCase().includes(searchQuery.toLowerCase())
+    (customer.lastTransaction || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const handleCustomerPress = (customer: Customer) => {
@@ -78,8 +67,10 @@ const CustomersScreen = () => {
     const customer = customers.find(c => c.id === selectedCustomerId);
     if (customer) {
       navigation.navigate('History', {
-        screen: 'CustomerTransactions',
-        params: {customer},
+        screen: 'TransactionList',
+        params: {
+          customer
+        }
       });
     }
     setShowOptions(false);
@@ -90,13 +81,16 @@ const CustomersScreen = () => {
       style={styles.customerItem}
       onPress={() => handleCustomerPress(item)}>
       <View style={styles.customerInfo}>
-        <Text style={styles.customerName}>{item.name}</Text>
+        <View style={styles.nameContainer}>
+          <Text style={styles.customerName}>{item.name}</Text>
+          <Text style={styles.customerId}>#{item.uniqueId}</Text>
+        </View>
         <Text style={styles.lastTransaction}>
-          Last transaction: {item.lastTransaction}
+          Last transaction: {item.lastTransaction || 'None'}
         </Text>
       </View>
       <View style={styles.rightContainer}>
-        <Text style={styles.balance}>${item.balance.toFixed(2)}</Text>
+        <Text style={styles.balance}>${(item.balance || 0).toFixed(2)}</Text>
         <TouchableOpacity 
           style={styles.optionsButton}
           onPress={() => handleOptionsPress(item.id)}>
@@ -123,31 +117,27 @@ const CustomersScreen = () => {
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name, phone or email"
+            placeholder="Search by name, ID, balance or transaction"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
         </View>
-        <TouchableOpacity style={styles.filterButton}>
-          <Icon name="grid-outline" size={20} color="#333" />
-        </TouchableOpacity>
       </View>
 
-      <TouchableOpacity style={styles.sortButton}>
-        <Icon name="funnel-outline" size={16} color="#333" />
-        <Text style={styles.sortButtonText}>{sortOrder}</Text>
-        <Icon name="chevron-down" size={16} color="#333" />
-      </TouchableOpacity>
+      {loading ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#007AFF" />
+        </View>
+      ) : (
+        <FlatList
+          data={filteredCustomers}
+          renderItem={renderCustomerItem}
+          keyExtractor={item => item.id}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContainer}
+        />
+      )}
 
-      <FlatList
-        data={filteredCustomers}
-        renderItem={renderCustomerItem}
-        keyExtractor={item => item.id}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContainer}
-      />
-
-      {/* Options Modal */}
       <Modal
         visible={showOptions}
         transparent={true}
@@ -221,14 +211,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  filterButton: {
-    width: 44,
-    height: 44,
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   sortButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -255,11 +237,21 @@ const styles = StyleSheet.create({
   customerInfo: {
     flex: 1,
   },
+  nameContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
   customerName: {
     fontSize: 16,
     fontWeight: '600',
     color: '#333',
-    marginBottom: 4,
+  },
+  customerId: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
   },
   lastTransaction: {
     fontSize: 14,
@@ -300,6 +292,11 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 16,
     color: '#333',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 });
 
