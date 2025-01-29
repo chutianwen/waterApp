@@ -9,6 +9,7 @@ import {
   FlatList,
   Modal,
   ActivityIndicator,
+  Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {useNavigation, useFocusEffect} from '@react-navigation/native';
@@ -34,28 +35,49 @@ const CustomersScreen = () => {
       const loadCustomers = async () => {
         try {
           setLoading(true);
+          // Always fetch fresh data from storage
           const loadedCustomers = await storage.getCustomers();
           setCustomers(loadedCustomers);
         } catch (error) {
           console.error('Error loading customers:', error);
+          Alert.alert('Error', 'Failed to load customers. Please try again.');
         } finally {
           setLoading(false);
         }
       };
 
       loadCustomers();
+      return () => {
+        // Clean up any subscriptions or pending operations
+      };
     }, [])
   );
 
-  const filteredCustomers = customers.filter(customer =>
-    customer.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    customer.uniqueId.includes(searchQuery) ||
-    customer.balance.toString().includes(searchQuery) ||
-    (customer.lastTransaction || '').toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredCustomers = customers.filter(customer => {
+    const query = searchQuery.toLowerCase();
+    const name = customer.name.toLowerCase();
+    
+    // For single character search, match only the start of the name
+    if (query.length === 1) {
+      return name.startsWith(query);
+    }
+    
+    // For longer searches, use includes and check all fields
+    return (
+      name.includes(query) ||
+      (customer.uniqueId?.includes(searchQuery) ?? false) ||
+      customer.balance.toString().includes(searchQuery) ||
+      (customer.lastTransaction || '').toLowerCase().includes(query)
+    );
+  });
 
   const handleCustomerPress = (customer: Customer) => {
-    navigation.navigate('New Transaction', {customer});
+    // Fetch latest customer data before navigating
+    const refreshedCustomer = customers.find(c => c.id === customer.id);
+    navigation.navigate('New Transaction', {
+      customer: refreshedCustomer || customer,
+      lastTransaction: undefined
+    });
   };
 
   const handleOptionsPress = (customerId: string) => {
@@ -81,12 +103,10 @@ const CustomersScreen = () => {
       style={styles.customerItem}
       onPress={() => handleCustomerPress(item)}>
       <View style={styles.customerInfo}>
-        <View style={styles.nameContainer}>
-          <Text style={styles.customerName}>{item.name}</Text>
-          <Text style={styles.customerId}>#{item.uniqueId}</Text>
-        </View>
+        <Text style={styles.customerName}>{item.name}</Text>
+        <Text style={styles.customerId}>#{item.uniqueId}</Text>
         <Text style={styles.lastTransaction}>
-          Last transaction: {item.lastTransaction || 'None'}
+          Last transaction: {formatDate(item.lastTransaction) || 'None'}
         </Text>
       </View>
       <View style={styles.rightContainer}>
@@ -99,6 +119,13 @@ const CustomersScreen = () => {
       </View>
     </TouchableOpacity>
   );
+
+  // Add date formatting function
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -117,9 +144,10 @@ const CustomersScreen = () => {
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name, ID, balance or transaction"
+            placeholder="Search by name, ID, or balance"
             value={searchQuery}
             onChangeText={setSearchQuery}
+            clearButtonMode="while-editing"
           />
         </View>
       </View>
@@ -135,6 +163,11 @@ const CustomersScreen = () => {
           keyExtractor={item => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyContainer}>
+              <Text style={styles.emptyText}>No customers found</Text>
+            </View>
+          )}
         />
       )}
 
@@ -190,12 +223,9 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   searchContainer: {
-    flexDirection: 'row',
     marginBottom: 16,
-    gap: 12,
   },
   searchInputContainer: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: '#FFF',
@@ -211,17 +241,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333',
   },
-  sortButton: {
-    flexDirection: 'row',
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
-    gap: 4,
-    paddingVertical: 8,
-    marginBottom: 16,
   },
-  sortButtonText: {
-    fontSize: 14,
-    color: '#333',
-    marginLeft: 4,
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 40,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#666',
   },
   listContainer: {
     gap: 8,
@@ -236,12 +269,6 @@ const styles = StyleSheet.create({
   },
   customerInfo: {
     flex: 1,
-  },
-  nameContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
   },
   customerName: {
     fontSize: 16,
@@ -292,11 +319,6 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 16,
     color: '#333',
-  },
-  loadingContainer: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 });
 

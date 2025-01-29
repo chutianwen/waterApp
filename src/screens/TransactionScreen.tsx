@@ -8,16 +8,19 @@ import {
   FlatList,
   ActivityIndicator,
   RefreshControl,
+  TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Transaction} from '../types/transaction';
 import * as storage from '../services/storage';
-import {useRoute} from '@react-navigation/native';
+import {useRoute, useNavigation} from '@react-navigation/native';
 import {useFocusEffect} from '@react-navigation/native';
 import type {RouteProp} from '@react-navigation/native';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../types/navigation';
 import {Customer} from '../types/customer';
 
+type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type TransactionScreenRouteProp = RouteProp<RootStackParamList, 'History'>;
 
 const PAGE_SIZE = 20;
@@ -31,6 +34,7 @@ const TransactionScreen = () => {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
   const route = useRoute<TransactionScreenRouteProp>();
+  const navigation = useNavigation<NavigationProp>();
 
   // Load data when screen comes into focus
   useFocusEffect(
@@ -102,29 +106,50 @@ const TransactionScreen = () => {
       const customer = customers.find(c => c.id === transaction.customerId);
       if (!customer) return false;
 
-      // Search by customer name
+      // For single character search in name, match only the exact name
+      if (query.length === 1) {
+        return customer.name.toLowerCase() === query;
+      }
+
+      // For ID search (starts with #), match the exact ID part
+      if (query.startsWith('#')) {
+        return customer.uniqueId === query.slice(1);
+      }
+
+      // For amount search (starts with $), match the exact amount
+      if (query.startsWith('$')) {
+        const searchAmount = parseFloat(query.slice(1));
+        return !isNaN(searchAmount) && transaction.amount === searchAmount;
+      }
+
+      // For regular search, check all fields
       const nameMatch = customer.name.toLowerCase().includes(query);
-      
-      // Search by customer ID
       const idMatch = customer.uniqueId.includes(query);
-      
-      // Search by amount
-      const amountString = transaction.amount.toFixed(2);
-      const amountMatch = amountString.includes(query);
-      
-      // Search by transaction type
+      const amountMatch = transaction.amount.toFixed(2).includes(query);
       const typeMatch = transaction.type.toLowerCase().includes(query);
       
-      // Search by date
+      // More precise date matching
       const date = new Date(transaction.createdAt || 0);
       const dateString = date.toLocaleDateString('en-US', {
         month: 'short',
         day: 'numeric',
         year: 'numeric',
       }).toLowerCase();
-      const dateMatch = dateString.includes(query);
+      const timeString = date.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: 'numeric',
+        hour12: true,
+      }).toLowerCase();
+      
+      const dateMatch = dateString.includes(query) || timeString.includes(query);
 
-      return nameMatch || idMatch || amountMatch || typeMatch || dateMatch;
+      // For gallons search
+      const gallonsMatch = transaction.gallons ? 
+        transaction.gallons.toString().includes(query) ||
+        `${transaction.gallons} gallons`.toLowerCase().includes(query) : 
+        false;
+
+      return nameMatch || idMatch || amountMatch || typeMatch || dateMatch || gallonsMatch;
     });
   };
 
@@ -148,57 +173,58 @@ const TransactionScreen = () => {
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    });
+    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
   };
 
-  const formatTime = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: 'numeric',
-      hour12: true,
-    });
-  };
-
-  const renderTransactionItem = ({item}: {item: Transaction}) => (
-    <View style={styles.transactionItem}>
-      <View style={styles.transactionHeader}>
-        <View>
-          <Text style={styles.date}>{formatDate(item.createdAt || '')}</Text>
-          <Text style={styles.time}>{formatTime(item.createdAt || '')}</Text>
-        </View>
-        <Text style={[styles.amount, item.type === 'fund' && styles.fundAmount]}>
-          {item.type === 'fund' ? '+' : '-'}${item.amount.toFixed(2)}
-        </Text>
-      </View>
-      <View style={styles.transactionDetails}>
-        <View style={styles.detailsLeft}>
+  const renderTransactionItem = ({item}: {item: Transaction}) => {
+    const customer = customers.find(c => c.id === item.customerId);
+    return (
+      <View style={styles.transactionItem}>
+        <View style={styles.transactionHeader}>
           <View style={styles.customerInfo}>
-            <Text style={styles.customerName}>
-              {customers.find(c => c.id === item.customerId)?.name || 'Unknown Customer'}
-            </Text>
+            <TouchableOpacity 
+              onPress={() => {
+                if (customer) {
+                  navigation.replace('History', {
+                    params: {
+                      customer: customer
+                    }
+                  });
+                }
+              }}
+              style={styles.customerNameButton}>
+              <Text style={styles.customerName}>
+                {customer?.name || 'Unknown Customer'}
+              </Text>
+              <Icon name="chevron-forward" size={16} color="#007AFF" style={styles.chevron} />
+            </TouchableOpacity>
             <Text style={styles.customerId}>
-              #{customers.find(c => c.id === item.customerId)?.uniqueId || ''}
+              #{customer?.uniqueId || ''}
             </Text>
+            <Text style={styles.time}>{formatDate(item.createdAt || '')}</Text>
           </View>
-          <Text style={styles.type}>
-            {item.type === 'fund' ? 'Fund Added' : 
-             `${item.type === 'regular' ? 'Regular' : 'Alkaline'} Water - ${item.gallons || 0} gallons`}
+          <Text style={[styles.amount, item.type === 'fund' && styles.fundAmount]}>
+            {item.type === 'fund' ? '+' : '-'}${item.amount.toFixed(2)}
           </Text>
         </View>
-        <Text style={styles.balance}>
-          Balance: ${item.customerBalance.toFixed(2)}
-        </Text>
+        
+        <View style={styles.transactionDetails}>
+          <View style={styles.detailsLeft}>
+            <Text style={styles.type}>
+              {item.type === 'fund' ? 'Fund Added' : 
+               `${item.type === 'regular' ? 'Regular' : 'Alkaline'} Water - ${item.gallons || 0} gallons`}
+            </Text>
+          </View>
+          <Text style={styles.newBalance}>
+            New Balance: ${item.customerBalance.toFixed(2)}
+          </Text>
+        </View>
+        {item.notes && (
+          <Text style={styles.notes}>{item.notes}</Text>
+        )}
       </View>
-      {item.notes && (
-        <Text style={styles.notes}>{item.notes}</Text>
-      )}
-    </View>
-  );
+    );
+  };
 
   const renderFooter = () => {
     if (!loading || refreshing) return null;
@@ -212,9 +238,23 @@ const TransactionScreen = () => {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.title}>
-          {route.params?.params?.customer ? `${route.params.params.customer.name}'s Transactions` : 'Transaction History'}
-        </Text>
+        <View style={styles.titleContainer}>
+          {route.params?.params?.customer ? (
+            <>
+              <Text style={styles.title}>{route.params.params.customer.name}</Text>
+              <Text style={styles.subtitle}>#{route.params.params.customer.uniqueId}</Text>
+            </>
+          ) : (
+            <Text style={styles.title}>Transaction History</Text>
+          )}
+        </View>
+        {route.params?.params?.customer && (
+          <TouchableOpacity 
+            style={styles.closeButton}
+            onPress={() => navigation.goBack()}>
+            <Icon name="close" size={24} color="#666" />
+          </TouchableOpacity>
+        )}
       </View>
 
       <View style={styles.searchContainer}>
@@ -222,7 +262,7 @@ const TransactionScreen = () => {
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name, ID, amount, or date"
+            placeholder="Search transactions"
             value={searchQuery}
             onChangeText={handleSearch}
             returnKeyType="search"
@@ -265,15 +305,29 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   header: {
-    marginBottom: 20,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  titleContainer: {
+    flex: 1,
   },
   title: {
-    fontSize: 28,
+    fontSize: 24,
     fontWeight: '700',
     color: '#333',
   },
+  subtitle: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 2,
+  },
+  closeButton: {
+    padding: 8,
+    marginLeft: 16,
+  },
   searchContainer: {
-    marginBottom: 16,
+    marginBottom: 12,
   },
   searchInputContainer: {
     flexDirection: 'row',
@@ -281,13 +335,14 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 12,
     paddingHorizontal: 12,
+    height: 40,
   },
   searchIcon: {
     marginRight: 8,
   },
   searchInput: {
     flex: 1,
-    height: 44,
+    height: 40,
     fontSize: 16,
     color: '#333',
   },
@@ -297,65 +352,66 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   listContainer: {
-    gap: 12,
+    flexGrow: 0,
+    gap: 8,
   },
   transactionItem: {
     backgroundColor: '#FFF',
     borderRadius: 12,
-    padding: 16,
+    padding: 12,
+    marginBottom: 8,
   },
   transactionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: 8,
+    marginBottom: 12,
   },
-  date: {
-    fontSize: 16,
+  customerInfo: {
+    flex: 1,
+  },
+  customerNameButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  customerName: {
+    fontSize: 15,
     fontWeight: '600',
-    color: '#333',
+    color: '#007AFF',
+    marginRight: 4,
+  },
+  customerId: {
+    fontSize: 13,
+    color: '#666',
+    marginBottom: 2,
   },
   time: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
-    marginTop: 2,
   },
   amount: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#333',
+    color: '#FF3B30',
   },
   transactionDetails: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 8,
+    marginTop: 4,
   },
   detailsLeft: {
     flex: 1,
   },
-  customerInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginBottom: 4,
-  },
-  customerName: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#333',
-  },
-  customerId: {
-    fontSize: 14,
-    color: '#666',
-  },
   type: {
-    fontSize: 14,
+    fontSize: 13,
     color: '#666',
   },
-  balance: {
-    fontSize: 14,
+  newBalance: {
+    fontSize: 13,
     color: '#666',
+    marginLeft: 12,
   },
   fundAmount: {
     color: '#34C759',
@@ -364,10 +420,17 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666',
     fontStyle: 'italic',
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#E9ECEF',
   },
   footerLoader: {
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  chevron: {
+    marginTop: 1,
   },
 });
 

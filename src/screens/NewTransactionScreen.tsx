@@ -9,6 +9,8 @@ import {
   Image,
   Alert,
   ScrollView,
+  ToastAndroid,
+  Platform,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
@@ -35,6 +37,7 @@ const NewTransactionScreen = () => {
   const [note, setNote] = useState('');
   const [regularPrice, setRegularPrice] = useState(1.50);
   const [alkalinePrice, setAlkalinePrice] = useState(2.00);
+  const [currentCustomer, setCurrentCustomer] = useState(customer);
   
   // Load saved prices when component mounts or comes into focus
   React.useEffect(() => {
@@ -61,8 +64,8 @@ const NewTransactionScreen = () => {
     parseFloat(fundAmount) || 0 : 
     adjustedAmount ? parseFloat(adjustedAmount) : calculatedAmount;
 
-  const isBalanceSufficient = transactionType === 'fund' || customer.balance >= totalAmount;
-  const requiredFunds = !isBalanceSufficient ? (totalAmount - customer.balance).toFixed(2) : '0';
+  const isBalanceSufficient = transactionType === 'fund' || currentCustomer.balance >= totalAmount;
+  const requiredFunds = !isBalanceSufficient ? (totalAmount - currentCustomer.balance).toFixed(2) : '0';
 
   // Update amount when calculated amount changes
   React.useEffect(() => {
@@ -70,6 +73,11 @@ const NewTransactionScreen = () => {
       setAdjustedAmount(calculatedAmount.toFixed(2));
     }
   }, [calculatedAmount]);
+
+  // Update balance when customer prop changes
+  React.useEffect(() => {
+    setCurrentCustomer(customer);
+  }, [customer]);
 
   const handleIncrement = () => {
     setGallons(prev => {
@@ -138,7 +146,7 @@ const NewTransactionScreen = () => {
     if (!isBalanceSufficient) {
       Alert.alert(
         'Insufficient Balance',
-        `This customer's balance ($${customer.balance.toFixed(2)}) is not sufficient for this transaction ($${totalAmount.toFixed(2)}).\n\nRequired additional funds: $${requiredFunds}`,
+        `This customer's balance ($${currentCustomer.balance.toFixed(2)}) is not sufficient for this transaction ($${totalAmount.toFixed(2)}).\n\nRequired additional funds: $${requiredFunds}`,
         [
           {
             text: 'Add Funds',
@@ -177,45 +185,74 @@ const NewTransactionScreen = () => {
   const createTransaction = async () => {
     try {
       const newTransaction = {
-        customerId: customer.id,
+        customerId: currentCustomer.id,
         type: transactionType as Transaction['type'],
         amount: totalAmount,
-        customerBalance: customer.balance + (transactionType === 'fund' ? totalAmount : -totalAmount),
+        customerBalance: currentCustomer.balance + (transactionType === 'fund' ? totalAmount : -totalAmount),
         notes: note,
         gallons: transactionType === 'fund' ? undefined : gallons,
       };
 
-      // Always create a transaction record
-      await storage.addTransaction(newTransaction);
+      // Create transaction record
+      const createdTransaction = await storage.addTransaction(newTransaction);
 
-      // For fund transactions, also update the customer's balance
+      // For fund transactions, update customer's balance
       if (transactionType === 'fund') {
-        await storage.updateCustomer(customer.id, {
-          balance: customer.balance + totalAmount,
+        const updatedCustomer = await storage.updateCustomer(currentCustomer.id, {
+          balance: currentCustomer.balance + totalAmount,
           lastTransaction: new Date().toISOString(),
         });
-      }
-
-      // Reset form for next transaction
-      if (transactionType === 'fund') {
+        
+        // Update local state
+        setCurrentCustomer(updatedCustomer);
+        
+        // Update route params to ensure parent screens have latest data
+        if (route.params) {
+          navigation.setParams({ 
+            customer: updatedCustomer,
+            lastTransaction: createdTransaction 
+          });
+        }
+        
+        // Show success message and reset form
+        Alert.alert('Success', `$${totalAmount.toFixed(2)} added to ${currentCustomer.name}'s balance.`);
         setFundAmount('');
+        setNote('');
       } else {
-        setGallons(5);
-        setAdjustedAmount('');
-      }
-      setNote('');
+        // For water purchases
+        const updatedCustomer = await storage.updateCustomer(currentCustomer.id, {
+          balance: currentCustomer.balance - totalAmount,
+          lastTransaction: new Date().toISOString(),
+        });
 
-      Alert.alert(
-        'Success',
-        'Transaction completed successfully!\nYou can start a new transaction or close this screen.',
-        [
-          {
-            text: 'OK',
-            style: 'default',
-            onPress: () => navigation.goBack(),
-          },
-        ],
-      );
+        // Update route params to ensure parent screens have latest data
+        if (route.params) {
+          navigation.setParams({ 
+            customer: updatedCustomer,
+            lastTransaction: createdTransaction 
+          });
+        }
+
+        const waterType = transactionType === 'regular' ? 'Regular' : 'Alkaline';
+        const message = `${gallons} gallons of ${waterType} Water purchased for $${totalAmount.toFixed(2)}`;
+        
+        // Show toast message
+        if (Platform.OS === 'android') {
+          ToastAndroid.showWithGravityAndOffset(
+            message,
+            ToastAndroid.LONG,
+            ToastAndroid.TOP,
+            0,
+            100
+          );
+        } else {
+          // For iOS, we'll still use Alert but it will be brief
+          Alert.alert('Success', message);
+        }
+
+        // Navigate back to History screen
+        navigation.goBack();
+      }
     } catch (error) {
       console.error('Error creating transaction:', error);
       Alert.alert('Error', 'Failed to complete transaction. Please try again.');
@@ -232,193 +269,170 @@ const NewTransactionScreen = () => {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.container}>
+      <View style={styles.container}>
         {/* Customer Profile Section */}
         <View style={styles.profileContainer}>
-          <Image
-            style={styles.profileImage}
-            source={{uri: 'https://placekitten.com/100/100'}}
-          />
           <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{customer.name}</Text>
+            <Text style={styles.profileName}>{currentCustomer.name}</Text>
             <Text style={[
               styles.profileBalance,
               !isBalanceSufficient && styles.insufficientBalance
             ]}>
-              Balance: ${customer.balance.toFixed(2)}
-              {!isBalanceSufficient && (transactionType === 'regular' || transactionType === 'alkaline') && (
-                <Text style={styles.warningText}>
-                  {`\nNeeds $${requiredFunds} more for this transaction`}
-                </Text>
-              )}
+              Balance: ${currentCustomer.balance.toFixed(2)}
             </Text>
           </View>
         </View>
 
-        {/* Transaction Type Selection */}
-        <Text style={styles.sectionTitle}>Select Transaction Type</Text>
-        <View style={styles.transactionTypeContainer}>
-          <TouchableOpacity
-            style={[
-              styles.transactionTypeButton,
-              transactionType === 'regular' && styles.transactionTypeButtonActive,
-            ]}
-            onPress={() => setTransactionType('regular')}>
-            <Icon 
-              name="water-outline" 
-              size={24} 
-              color={transactionType === 'regular' ? '#FFF' : '#666'} 
-            />
-            <Text
+        {/* Main Content */}
+        <View style={styles.mainContent}>
+          {/* Transaction Type Selection */}
+          <Text style={styles.sectionTitle}>Select Transaction Type</Text>
+          <View style={styles.transactionTypeContainer}>
+            <TouchableOpacity
               style={[
-                styles.transactionTypeText,
-                transactionType === 'regular' && styles.transactionTypeTextActive,
-              ]}>
-              Regular Water
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.transactionTypeButton,
-              transactionType === 'alkaline' && styles.transactionTypeButtonActive,
-            ]}
-            onPress={() => setTransactionType('alkaline')}>
-            <Icon 
-              name="water" 
-              size={24} 
-              color={transactionType === 'alkaline' ? '#FFF' : '#666'} 
-            />
-            <Text
-              style={[
-                styles.transactionTypeText,
-                transactionType === 'alkaline' && styles.transactionTypeTextActive,
-              ]}>
-              Alkaline Water
-            </Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[
-              styles.transactionTypeButton,
-              transactionType === 'fund' && styles.fundTypeButton,
-            ]}
-            onPress={() => setTransactionType('fund')}>
-            <Icon 
-              name="wallet-outline" 
-              size={24} 
-              color={transactionType === 'fund' ? '#FFF' : '#666'} 
-            />
-            <Text
-              style={[
-                styles.transactionTypeText,
-                transactionType === 'fund' && styles.transactionTypeTextActive,
-              ]}>
-              Add Fund
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {transactionType !== 'fund' ? (
-          <>
-            {/* Gallons Input */}
-            <Text style={styles.sectionTitle}>Gallons</Text>
-            <View style={styles.gallonsContainer}>
-              <TouchableOpacity style={styles.gallonButton} onPress={handleDecrement}>
-                <Text style={styles.gallonButtonText}>−</Text>
-              </TouchableOpacity>
-              <View style={styles.gallonInputContainer}>
-                <Text style={styles.gallonInput}>{gallons}</Text>
-              </View>
-              <TouchableOpacity style={styles.gallonButton} onPress={handleIncrement}>
-                <Text style={styles.gallonButtonText}>+</Text>
-              </TouchableOpacity>
-            </View>
-
-            {/* Adjusted Amount Input */}
-            <Text style={styles.sectionTitle}>Amount (Adjustable)</Text>
-            <View style={styles.fundInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.fundInput}
-                value={adjustedAmount}
-                onChangeText={setAdjustedAmount}
-                keyboardType="decimal-pad"
-                placeholder={calculatedAmount.toFixed(2)}
+                styles.transactionTypeButton,
+                transactionType === 'regular' && styles.transactionTypeButtonActive,
+              ]}
+              onPress={() => setTransactionType('regular')}>
+              <Icon 
+                name="water-outline" 
+                size={24} 
+                color={transactionType === 'regular' ? '#FFF' : '#666'} 
               />
-            </View>
-          </>
-        ) : (
-          <>
-            {/* Fund Amount Input */}
-            <Text style={styles.sectionTitle}>Fund Amount</Text>
-            <View style={styles.fundInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.fundInput}
-                value={fundAmount}
-                onChangeText={setFundAmount}
-                keyboardType="decimal-pad"
-                placeholder="0.00"
-              />
-            </View>
-          </>
-        )}
+              <Text
+                style={[
+                  styles.transactionTypeText,
+                  transactionType === 'regular' && styles.transactionTypeTextActive,
+                ]}>
+                Regular
+              </Text>
+            </TouchableOpacity>
 
-        {/* Price Calculation */}
-        <View style={styles.priceContainer}>
-          <Text style={styles.sectionTitle}>
-            {transactionType === 'fund' ? 'Summary' : 'Price Calculation'}
-          </Text>
-          {transactionType !== 'fund' && (
+            <TouchableOpacity
+              style={[
+                styles.transactionTypeButton,
+                transactionType === 'alkaline' && styles.transactionTypeButtonActive,
+              ]}
+              onPress={() => setTransactionType('alkaline')}>
+              <Icon 
+                name="water" 
+                size={24} 
+                color={transactionType === 'alkaline' ? '#FFF' : '#666'} 
+              />
+              <Text
+                style={[
+                  styles.transactionTypeText,
+                  transactionType === 'alkaline' && styles.transactionTypeTextActive,
+                ]}>
+                Alkaline
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.transactionTypeButton,
+                transactionType === 'fund' && styles.transactionTypeButtonActive,
+              ]}
+              onPress={() => setTransactionType('fund')}>
+              <Icon 
+                name="cash-outline" 
+                size={24} 
+                color={transactionType === 'fund' ? '#FFF' : '#666'} 
+              />
+              <Text
+                style={[
+                  styles.transactionTypeText,
+                  transactionType === 'fund' && styles.transactionTypeTextActive,
+                ]}>
+                Add Funds
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Transaction Details */}
+          {transactionType !== 'fund' ? (
             <>
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Price per gallon:</Text>
-                <Text style={styles.priceValue}>${pricePerGallon.toFixed(2)}</Text>
-              </View>
-              <View style={styles.priceRow}>
-                <Text style={styles.priceLabel}>Total gallons:</Text>
-                <Text style={styles.priceValue}>{gallons}</Text>
-              </View>
-              {adjustedAmount && parseFloat(adjustedAmount) !== calculatedAmount && (
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>Original amount:</Text>
-                  <Text style={styles.priceValue}>${calculatedAmount.toFixed(2)}</Text>
+              <Text style={styles.sectionTitle}>Gallons</Text>
+              <View style={styles.gallonsContainer}>
+                <TouchableOpacity style={styles.gallonButton} onPress={handleDecrement}>
+                  <Text style={styles.gallonButtonText}>−</Text>
+                </TouchableOpacity>
+                <View style={styles.gallonInputContainer}>
+                  <Text style={styles.gallonInput}>{gallons}</Text>
                 </View>
-              )}
+                <TouchableOpacity style={styles.gallonButton} onPress={handleIncrement}>
+                  <Text style={styles.gallonButtonText}>+</Text>
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.sectionTitle}>Amount</Text>
+              <View style={styles.fundInputContainer}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.fundInput}
+                  value={adjustedAmount}
+                  onChangeText={setAdjustedAmount}
+                  keyboardType="decimal-pad"
+                  placeholder={calculatedAmount.toFixed(2)}
+                />
+              </View>
+
+              <View style={styles.priceContainer}>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>Price per gallon:</Text>
+                  <Text style={styles.priceValue}>${pricePerGallon.toFixed(2)}</Text>
+                </View>
+                <View style={styles.priceRow}>
+                  <Text style={styles.priceLabel}>Total gallons:</Text>
+                  <Text style={styles.priceValue}>{gallons}</Text>
+                </View>
+                {adjustedAmount && parseFloat(adjustedAmount) !== calculatedAmount && (
+                  <View style={styles.priceRow}>
+                    <Text style={styles.priceLabel}>Original amount:</Text>
+                    <Text style={styles.priceValue}>${calculatedAmount.toFixed(2)}</Text>
+                  </View>
+                )}
+                <View style={[styles.priceRow, styles.totalRow]}>
+                  <Text style={styles.totalLabel}>Final Amount:</Text>
+                  <Text style={[styles.totalValue, {color: '#007AFF'}]}>${totalAmount.toFixed(2)}</Text>
+                </View>
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.sectionTitle}>Fund Amount</Text>
+              <View style={styles.fundInputContainer}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.fundInput}
+                  value={fundAmount}
+                  onChangeText={setFundAmount}
+                  keyboardType="decimal-pad"
+                  placeholder="0.00"
+                />
+              </View>
             </>
           )}
-          <View style={[styles.priceRow, styles.totalRow]}>
-            <Text style={styles.totalLabel}>
-              {transactionType === 'fund' ? 'Fund Amount:' : 'Final Amount:'}
-            </Text>
-            <Text style={[styles.totalValue, transactionType === 'fund' && styles.fundTotalValue]}>
-              ${totalAmount.toFixed(2)}
-            </Text>
-          </View>
+
+          <Text style={styles.sectionTitle}>Notes (Optional)</Text>
+          <TextInput
+            style={styles.noteInput}
+            value={note}
+            onChangeText={setNote}
+            placeholder="Add any notes here..."
+            multiline
+          />
         </View>
 
-        {/* Note Input */}
-        <Text style={styles.sectionTitle}>Add Note (Optional)</Text>
-        <TextInput
-          style={styles.noteInput}
-          placeholder="Enter any additional notes here..."
-          value={note}
-          onChangeText={setNote}
-          multiline
-        />
-      </ScrollView>
-
-      {/* Complete Transaction Button - Outside ScrollView */}
-      <View style={styles.buttonContainer}>
-        <TouchableOpacity 
+        {/* Complete Button - Always at bottom */}
+        <TouchableOpacity
           style={[
-            styles.completeButton, 
-            transactionType === 'fund' && styles.fundCompleteButton
+            styles.completeButton,
+            transactionType === 'fund' && styles.fundCompleteButton,
           ]}
           onPress={handleCompleteTransaction}>
           <Text style={styles.completeButtonText}>
-            Complete {transactionType === 'fund' ? 'Fund Load' : 'Purchase'}
+            {transactionType === 'fund' ? 'Add Funds' : 'Complete Purchase'}
           </Text>
         </TouchableOpacity>
       </View>
@@ -434,6 +448,7 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     padding: 16,
+    paddingTop: 12,
   },
   buttonContainer: {
     padding: 16,
@@ -448,25 +463,23 @@ const styles = StyleSheet.create({
     marginTop: 20,
   },
   profileContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
     marginBottom: 24,
   },
-  profileImage: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-  },
   profileInfo: {
-    marginLeft: 12,
+    alignItems: 'flex-start',
   },
   profileName: {
-    fontSize: 18,
+    fontSize: 28,
     fontWeight: '600',
+    color: '#333',
+    marginBottom: 4,
   },
   profileBalance: {
-    fontSize: 14,
+    fontSize: 16,
     color: '#666',
+  },
+  mainContent: {
+    flex: 1,
   },
   sectionTitle: {
     fontSize: 16,
@@ -475,24 +488,24 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   transactionTypeContainer: {
-    flexDirection: 'column',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginBottom: 24,
-    gap: 12,
+    gap: 8,
   },
   transactionTypeButton: {
-    paddingVertical: 16,
-    borderRadius: 12,
-    backgroundColor: '#F1F3F5',
-    alignItems: 'center',
+    flex: 1,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#F8F9FA',
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderRadius: 12,
     gap: 8,
   },
   transactionTypeButtonActive: {
     backgroundColor: '#007AFF',
-  },
-  fundTypeButton: {
-    backgroundColor: '#34C759',
   },
   transactionTypeText: {
     color: '#666',
@@ -505,7 +518,7 @@ const styles = StyleSheet.create({
   gallonsContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   gallonButton: {
     width: 44,
@@ -527,11 +540,30 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '500',
   },
+  fundInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 20,
+  },
+  currencySymbol: {
+    fontSize: 24,
+    color: '#333',
+    marginRight: 8,
+  },
+  fundInput: {
+    flex: 1,
+    fontSize: 24,
+    color: '#333',
+    padding: 0,
+  },
   priceContainer: {
     backgroundColor: '#FFF',
     padding: 16,
     borderRadius: 12,
-    marginBottom: 24,
+    marginBottom: 20,
   },
   priceRow: {
     flexDirection: 'row',
@@ -563,53 +595,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 12,
     padding: 12,
-    height: 100,
+    height: 48,
     textAlignVertical: 'top',
-    marginBottom: 24,
+    marginBottom: 20,
   },
   completeButton: {
     backgroundColor: '#007AFF',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
+    marginTop: 8,
   },
   completeButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  fundInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 24,
-  },
-  currencySymbol: {
-    fontSize: 24,
-    color: '#333',
-    marginRight: 8,
-  },
-  fundInput: {
-    flex: 1,
-    fontSize: 24,
-    color: '#333',
-    padding: 0,
-  },
-  fundTotalValue: {
-    color: '#34C759',
-  },
   fundCompleteButton: {
     backgroundColor: '#34C759',
   },
   insufficientBalance: {
     color: '#FF3B30',
-  },
-  warningText: {
-    fontSize: 12,
-    color: '#FF3B30',
-    fontStyle: 'italic',
   },
 });
 
