@@ -33,6 +33,7 @@ const TransactionScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(1);
+  const [allTransactions, setAllTransactions] = useState<Transaction[]>([]);
   const route = useRoute<TransactionScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
 
@@ -66,10 +67,8 @@ const TransactionScreen = () => {
       const customerId = route.params?.params?.customer?.id;
       
       if (customerId) {
-        // Load transactions for specific customer
         loadedTransactions = await storage.getCustomerTransactions(customerId, pageNum, PAGE_SIZE);
       } else {
-        // Load all transactions for the main history tab
         loadedTransactions = await storage.getCustomerTransactions('all', pageNum, PAGE_SIZE);
       }
 
@@ -80,16 +79,16 @@ const TransactionScreen = () => {
         return dateB.getTime() - dateA.getTime();
       });
 
-      // Filter transactions based on search query
-      const filteredTransactions = filterTransactions(loadedTransactions);
-
       if (isRefresh || pageNum === 1) {
-        setTransactions(filteredTransactions);
+        setAllTransactions(loadedTransactions);
+        setTransactions(searchQuery ? filterTransactions(loadedTransactions) : loadedTransactions);
       } else {
-        setTransactions(prev => [...prev, ...filteredTransactions]);
+        setAllTransactions(prev => [...prev, ...loadedTransactions]);
+        const newTransactions = [...transactions, ...loadedTransactions];
+        setTransactions(searchQuery ? filterTransactions(newTransactions) : newTransactions);
       }
 
-      setHasMore(filteredTransactions.length === PAGE_SIZE);
+      setHasMore(loadedTransactions.length === PAGE_SIZE);
     } catch (error) {
       console.error('Error loading data:', error);
     } finally {
@@ -106,50 +105,20 @@ const TransactionScreen = () => {
       const customer = customers.find(c => c.id === transaction.customerId);
       if (!customer) return false;
 
-      // For single character search in name, match only the exact name
-      if (query.length === 1) {
-        return customer.name.toLowerCase() === query;
-      }
-
-      // For ID search (starts with #), match the exact ID part
+      // For ID search (starts with #)
       if (query.startsWith('#')) {
-        return customer.uniqueId === query.slice(1);
+        return customer.uniqueId.toLowerCase().includes(query.slice(1).toLowerCase());
       }
 
-      // For amount search (starts with $), match the exact amount
+      // For amount search (starts with $)
       if (query.startsWith('$')) {
-        const searchAmount = parseFloat(query.slice(1));
-        return !isNaN(searchAmount) && transaction.amount === searchAmount;
+        const searchAmount = query.slice(1);
+        const transactionAmount = Math.abs(transaction.amount).toFixed(2);
+        return transactionAmount.includes(searchAmount);
       }
 
-      // For regular search, check all fields
-      const nameMatch = customer.name.toLowerCase().includes(query);
-      const idMatch = customer.uniqueId.includes(query);
-      const amountMatch = transaction.amount.toFixed(2).includes(query);
-      const typeMatch = transaction.type.toLowerCase().includes(query);
-      
-      // More precise date matching
-      const date = new Date(transaction.createdAt || 0);
-      const dateString = date.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-        year: 'numeric',
-      }).toLowerCase();
-      const timeString = date.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: 'numeric',
-        hour12: true,
-      }).toLowerCase();
-      
-      const dateMatch = dateString.includes(query) || timeString.includes(query);
-
-      // For gallons search
-      const gallonsMatch = transaction.gallons ? 
-        transaction.gallons.toString().includes(query) ||
-        `${transaction.gallons} gallons`.toLowerCase().includes(query) : 
-        false;
-
-      return nameMatch || idMatch || amountMatch || typeMatch || dateMatch || gallonsMatch;
+      // For name search (default)
+      return customer.name.toLowerCase().includes(query);
     });
   };
 
@@ -167,8 +136,11 @@ const TransactionScreen = () => {
 
   const handleSearch = (text: string) => {
     setSearchQuery(text);
-    setPage(1);
-    loadInitialData();
+    if (!text.trim()) {
+      setTransactions(allTransactions);
+    } else {
+      setTransactions(filterTransactions(allTransactions));
+    }
   };
 
   const formatDate = (dateString: string) => {
@@ -182,22 +154,9 @@ const TransactionScreen = () => {
       <View style={styles.transactionItem}>
         <View style={styles.transactionHeader}>
           <View style={styles.customerInfo}>
-            <TouchableOpacity 
-              onPress={() => {
-                if (customer) {
-                  navigation.replace('History', {
-                    params: {
-                      customer: customer
-                    }
-                  });
-                }
-              }}
-              style={styles.customerNameButton}>
-              <Text style={styles.customerName}>
-                {customer?.name || 'Unknown Customer'}
-              </Text>
-              <Icon name="chevron-forward" size={16} color="#007AFF" style={styles.chevron} />
-            </TouchableOpacity>
+            <Text style={styles.customerName}>
+              {customer?.name || 'Unknown Customer'}
+            </Text>
             <Text style={styles.customerId}>
               #{customer?.uniqueId || ''}
             </Text>
@@ -237,32 +196,14 @@ const TransactionScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <View style={styles.titleContainer}>
-          {route.params?.params?.customer ? (
-            <>
-              <Text style={styles.title}>{route.params.params.customer.name}</Text>
-              <Text style={styles.subtitle}>#{route.params.params.customer.uniqueId}</Text>
-            </>
-          ) : (
-            <Text style={styles.title}>Transaction History</Text>
-          )}
-        </View>
-        {route.params?.params?.customer && (
-          <TouchableOpacity 
-            style={styles.closeButton}
-            onPress={() => navigation.goBack()}>
-            <Icon name="close" size={24} color="#666" />
-          </TouchableOpacity>
-        )}
-      </View>
+      <Text style={styles.title}>Transaction History</Text>
 
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search transactions"
+            placeholder="Search by name, #ID, or $amount"
             value={searchQuery}
             onChangeText={handleSearch}
             returnKeyType="search"
@@ -302,31 +243,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#F8F9FA',
-    padding: 16,
-  },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  titleContainer: {
-    flex: 1,
+    paddingTop: 12,
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
+    fontSize: 32,
+    fontWeight: 'bold',
     color: '#333',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#666',
-    marginTop: 2,
-  },
-  closeButton: {
-    padding: 8,
+    marginBottom: 16,
     marginLeft: 16,
   },
   searchContainer: {
+    paddingHorizontal: 16,
     marginBottom: 12,
   },
   searchInputContainer: {
@@ -370,16 +297,10 @@ const styles = StyleSheet.create({
   customerInfo: {
     flex: 1,
   },
-  customerNameButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 4,
-  },
   customerName: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#007AFF',
-    marginRight: 4,
+    fontSize: 16,
+    fontWeight: '500',
+    color: '#333',
   },
   customerId: {
     fontSize: 13,
@@ -428,9 +349,6 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: 16,
     alignItems: 'center',
-  },
-  chevron: {
-    marginTop: 1,
   },
 });
 
