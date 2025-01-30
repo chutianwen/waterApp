@@ -11,6 +11,7 @@ import {
   ScrollView,
   ToastAndroid,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {useNavigation, useRoute, RouteProp} from '@react-navigation/native';
@@ -18,7 +19,7 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Customer} from '../types/customer';
 import {Transaction} from '../types/transaction';
 import {RootStackParamList} from '../types/navigation';
-import * as storage from '../services/storage';
+import * as firebase from '../services/firebase';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 type ScreenRouteProp = RouteProp<RootStackParamList, 'New Transaction'>;
@@ -38,12 +39,13 @@ const NewTransactionScreen = () => {
   const [regularPrice, setRegularPrice] = useState(1.50);
   const [alkalinePrice, setAlkalinePrice] = useState(2.00);
   const [currentCustomer, setCurrentCustomer] = useState(customer);
+  const [loading, setLoading] = useState(false);
   
   // Load saved prices when component mounts or comes into focus
   React.useEffect(() => {
     const loadPrices = async () => {
       try {
-        const prices = await storage.getWaterPrices();
+        const prices = await firebase.getWaterPrices();
         setRegularPrice(prices.regularPrice);
         setAlkalinePrice(prices.alkalinePrice);
       } catch (error) {
@@ -120,14 +122,13 @@ const NewTransactionScreen = () => {
   const checkDuplicateTransaction = () => {
     if (!lastTransaction) return false;
 
-    const timeDiff = Date.now() - new Date(lastTransaction.date).getTime();
+    const timeDiff = Date.now() - new Date(lastTransaction.createdAt).getTime();
     const isWithin5Minutes = timeDiff < 5 * 60 * 1000;
 
     if (isWithin5Minutes) {
-      const currentWaterType = transactionType === 'regular' ? 'Regular Water' : 'Alkaline Water';
       if (
         transactionType !== 'fund' &&
-        lastTransaction.waterType === currentWaterType &&
+        lastTransaction.type === transactionType &&
         lastTransaction.amount === totalAmount
       ) {
         return true;
@@ -183,60 +184,46 @@ const NewTransactionScreen = () => {
   };
 
   const createTransaction = async () => {
+    if (loading) return;
+
     try {
+      setLoading(true);
+      const newBalance = currentCustomer.balance + (transactionType === 'fund' ? totalAmount : -totalAmount);
+      
       const newTransaction = {
         customerId: currentCustomer.id,
-        type: transactionType as Transaction['type'],
+        type: transactionType,
         amount: totalAmount,
-        customerBalance: currentCustomer.balance + (transactionType === 'fund' ? totalAmount : -totalAmount),
-        notes: note,
+        customerBalance: newBalance,
+        notes: note.trim(),
         gallons: transactionType === 'fund' ? undefined : gallons,
       };
 
-      // Create transaction record
-      const createdTransaction = await storage.addTransaction(newTransaction);
-
-      // For fund transactions, update customer's balance
-      if (transactionType === 'fund') {
-        const updatedCustomer = await storage.updateCustomer(currentCustomer.id, {
-          balance: currentCustomer.balance + totalAmount,
+      // Create transaction record and update customer in a batch
+      const { transaction: createdTransaction, customer: updatedCustomer } = await firebase.addTransactionAndUpdateCustomer(
+        newTransaction,
+        {
+          balance: newBalance,
           lastTransaction: new Date().toISOString(),
-        });
-        
-        // Update local state
-        setCurrentCustomer(updatedCustomer);
-        
-        // Update route params to ensure parent screens have latest data
-        if (route.params) {
-          navigation.setParams({ 
-            customer: updatedCustomer,
-            lastTransaction: createdTransaction 
-          });
         }
-        
-        // Show success message and reset form
+      );
+
+      // Update local state and navigation params
+      setCurrentCustomer(updatedCustomer);
+      navigation.setParams({ 
+        customer: updatedCustomer,
+        lastTransaction: createdTransaction 
+      });
+
+      // Show success message
+      if (transactionType === 'fund') {
         Alert.alert('Success', `$${totalAmount.toFixed(2)} added to ${currentCustomer.name}'s balance.`);
         setFundAmount('');
         setNote('');
       } else {
-        // For water purchases
-        const updatedCustomer = await storage.updateCustomer(currentCustomer.id, {
-          balance: currentCustomer.balance - totalAmount,
-          lastTransaction: new Date().toISOString(),
-        });
-
-        // Update route params to ensure parent screens have latest data
-        if (route.params) {
-          navigation.setParams({ 
-            customer: updatedCustomer,
-            lastTransaction: createdTransaction 
-          });
-        }
-
         const waterType = transactionType === 'regular' ? 'Regular' : 'Alkaline';
         const message = `${gallons} gallons of ${waterType} Water purchased for $${totalAmount.toFixed(2)}`;
         
-        // Show toast message
         if (Platform.OS === 'android') {
           ToastAndroid.showWithGravityAndOffset(
             message,
@@ -246,16 +233,24 @@ const NewTransactionScreen = () => {
             100
           );
         } else {
-          // For iOS, we'll still use Alert but it will be brief
           Alert.alert('Success', message);
         }
 
-        // Navigate back to History screen
-        navigation.goBack();
+        // Reset form
+        setGallons(5);
+        setNote('');
+        setAdjustedAmount('');
       }
+
+      // Clear Firebase cache to ensure fresh data
+      firebase.clearCache('customers');
+      firebase.clearCache('transactions');
+
     } catch (error) {
       console.error('Error creating transaction:', error);
       Alert.alert('Error', 'Failed to complete transaction. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -268,277 +263,242 @@ const NewTransactionScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        {/* Customer Profile Section */}
-        <View style={styles.profileContainer}>
-          <View style={styles.profileInfo}>
-            <Text style={styles.profileName}>{currentCustomer.name}</Text>
-            <Text style={[
-              styles.profileBalance,
-              !isBalanceSufficient && styles.insufficientBalance
-            ]}>
-              Balance: ${currentCustomer.balance.toFixed(2)}
-            </Text>
-          </View>
+    <SafeAreaView style={styles.container}>
+      <ScrollView style={styles.scrollView}>
+        <View style={styles.header}>
+          <Text style={styles.customerName}>{currentCustomer.name}</Text>
+          <Text style={styles.customerId}>#{currentCustomer.uniqueId}</Text>
+          <Text style={styles.balance}>
+            Balance: ${currentCustomer.balance.toFixed(2)}
+          </Text>
         </View>
 
-        {/* Main Content */}
-        <View style={styles.mainContent}>
-          {/* Transaction Type Selection */}
-          <Text style={styles.sectionTitle}>Select Transaction Type</Text>
-          <View style={styles.transactionTypeContainer}>
-            <TouchableOpacity
+        <View style={styles.transactionTypeContainer}>
+          <TouchableOpacity
+            style={[
+              styles.typeButton,
+              transactionType === 'regular' && styles.selectedType,
+            ]}
+            onPress={() => setTransactionType('regular')}
+            disabled={loading}>
+            <Text
               style={[
-                styles.transactionTypeButton,
-                transactionType === 'regular' && styles.transactionTypeButtonActive,
-              ]}
-              onPress={() => setTransactionType('regular')}>
-              <Icon 
-                name="water-outline" 
-                size={24} 
-                color={transactionType === 'regular' ? '#FFF' : '#666'} 
-              />
-              <Text
-                style={[
-                  styles.transactionTypeText,
-                  transactionType === 'regular' && styles.transactionTypeTextActive,
-                ]}>
-                Regular
-              </Text>
-            </TouchableOpacity>
+                styles.typeText,
+                transactionType === 'regular' && styles.selectedTypeText,
+              ]}>
+              Regular Water
+            </Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity
+          <TouchableOpacity
+            style={[
+              styles.typeButton,
+              transactionType === 'alkaline' && styles.selectedType,
+            ]}
+            onPress={() => setTransactionType('alkaline')}
+            disabled={loading}>
+            <Text
               style={[
-                styles.transactionTypeButton,
-                transactionType === 'alkaline' && styles.transactionTypeButtonActive,
-              ]}
-              onPress={() => setTransactionType('alkaline')}>
-              <Icon 
-                name="water" 
-                size={24} 
-                color={transactionType === 'alkaline' ? '#FFF' : '#666'} 
-              />
-              <Text
-                style={[
-                  styles.transactionTypeText,
-                  transactionType === 'alkaline' && styles.transactionTypeTextActive,
-                ]}>
-                Alkaline
-              </Text>
-            </TouchableOpacity>
+                styles.typeText,
+                transactionType === 'alkaline' && styles.selectedTypeText,
+              ]}>
+              Alkaline Water
+            </Text>
+          </TouchableOpacity>
 
-            <TouchableOpacity
+          <TouchableOpacity
+            style={[
+              styles.typeButton,
+              transactionType === 'fund' && styles.selectedType,
+            ]}
+            onPress={() => setTransactionType('fund')}
+            disabled={loading}>
+            <Text
               style={[
-                styles.transactionTypeButton,
-                transactionType === 'fund' && styles.transactionTypeButtonActive,
-              ]}
-              onPress={() => setTransactionType('fund')}>
-              <Icon 
-                name="cash-outline" 
-                size={24} 
-                color={transactionType === 'fund' ? '#FFF' : '#666'} 
+                styles.typeText,
+                transactionType === 'fund' && styles.selectedTypeText,
+              ]}>
+              Add Funds
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        {transactionType === 'fund' ? (
+          <View style={styles.fundContainer}>
+            <Text style={styles.label}>Amount to Add</Text>
+            <View style={styles.fundInputContainer}>
+              <Text style={styles.currencySymbol}>$</Text>
+              <TextInput
+                style={styles.fundInput}
+                value={fundAmount}
+                onChangeText={(value) => {
+                  setFundAmount(value);
+                  setAdjustedAmount(value); // Keep both values in sync for fund type
+                }}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+                editable={!loading}
               />
-              <Text
-                style={[
-                  styles.transactionTypeText,
-                  transactionType === 'fund' && styles.transactionTypeTextActive,
-                ]}>
-                Add Funds
-              </Text>
-            </TouchableOpacity>
+            </View>
           </View>
-
-          {/* Transaction Details */}
-          {transactionType !== 'fund' ? (
-            <>
-              <Text style={styles.sectionTitle}>Gallons</Text>
-              <View style={styles.gallonsContainer}>
-                <TouchableOpacity style={styles.gallonButton} onPress={handleDecrement}>
-                  <Text style={styles.gallonButtonText}>−</Text>
-                </TouchableOpacity>
-                <View style={styles.gallonInputContainer}>
-                  <Text style={styles.gallonInput}>{gallons}</Text>
-                </View>
-                <TouchableOpacity style={styles.gallonButton} onPress={handleIncrement}>
-                  <Text style={styles.gallonButtonText}>+</Text>
-                </TouchableOpacity>
-              </View>
-
-              <Text style={styles.sectionTitle}>Amount</Text>
-              <View style={styles.fundInputContainer}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={styles.fundInput}
-                  value={adjustedAmount}
-                  onChangeText={setAdjustedAmount}
-                  keyboardType="decimal-pad"
-                  placeholder={calculatedAmount.toFixed(2)}
+        ) : (
+          <View style={styles.gallonsContainer}>
+            <Text style={styles.label}>Gallons</Text>
+            <View style={styles.gallonsInputContainer}>
+              <TouchableOpacity
+                style={styles.gallonsButton}
+                onPress={handleDecrement}
+                disabled={gallons <= 1 || loading}>
+                <Icon
+                  name="remove"
+                  size={24}
+                  color={gallons <= 1 ? '#CCC' : '#007AFF'}
                 />
-              </View>
+              </TouchableOpacity>
+              <Text style={styles.gallonsText}>{gallons}</Text>
+              <TouchableOpacity
+                style={styles.gallonsButton}
+                onPress={handleIncrement}
+                disabled={loading}>
+                <Icon name="add" size={24} color="#007AFF" />
+              </TouchableOpacity>
+            </View>
+            <Text style={styles.priceText}>
+              ${pricePerGallon.toFixed(2)} per gallon
+            </Text>
+          </View>
+        )}
 
-              <View style={styles.priceContainer}>
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>Price per gallon:</Text>
-                  <Text style={styles.priceValue}>${pricePerGallon.toFixed(2)}</Text>
-                </View>
-                <View style={styles.priceRow}>
-                  <Text style={styles.priceLabel}>Total gallons:</Text>
-                  <Text style={styles.priceValue}>{gallons}</Text>
-                </View>
-                {adjustedAmount && parseFloat(adjustedAmount) !== calculatedAmount && (
-                  <View style={styles.priceRow}>
-                    <Text style={styles.priceLabel}>Original amount:</Text>
-                    <Text style={styles.priceValue}>${calculatedAmount.toFixed(2)}</Text>
-                  </View>
-                )}
-                <View style={[styles.priceRow, styles.totalRow]}>
-                  <Text style={styles.totalLabel}>Final Amount:</Text>
-                  <Text style={[styles.totalValue, {color: '#007AFF'}]}>${totalAmount.toFixed(2)}</Text>
-                </View>
-              </View>
-            </>
-          ) : (
-            <>
-              <Text style={styles.sectionTitle}>Fund Amount</Text>
-              <View style={styles.fundInputContainer}>
-                <Text style={styles.currencySymbol}>$</Text>
-                <TextInput
-                  style={styles.fundInput}
-                  value={fundAmount}
-                  onChangeText={setFundAmount}
-                  keyboardType="decimal-pad"
-                  placeholder="0.00"
-                />
-              </View>
-            </>
-          )}
+        {/* Only show amount container for water purchases, not for fund additions */}
+        {transactionType !== 'fund' && (
+          <View style={styles.amountContainer}>
+            <Text style={styles.label}>Total Amount</Text>
+            <View style={styles.amountInputContainer}>
+              <Text style={styles.currencySymbol}>$</Text>
+              <TextInput
+                style={styles.amountInput}
+                value={adjustedAmount}
+                onChangeText={setAdjustedAmount}
+                placeholder="0.00"
+                keyboardType="decimal-pad"
+                editable={!loading}
+              />
+            </View>
+          </View>
+        )}
 
-          <Text style={styles.sectionTitle}>Notes (Optional)</Text>
+        <View style={styles.noteContainer}>
+          <Text style={styles.label}>Note (Optional)</Text>
           <TextInput
             style={styles.noteInput}
             value={note}
             onChangeText={setNote}
-            placeholder="Add any notes here..."
+            placeholder="Add a note..."
             multiline
+            editable={!loading}
           />
         </View>
 
-        {/* Complete Button - Always at bottom */}
         <TouchableOpacity
-          style={[
-            styles.completeButton,
-            transactionType === 'fund' && styles.fundCompleteButton,
-          ]}
-          onPress={handleCompleteTransaction}>
-          <Text style={styles.completeButtonText}>
-            {transactionType === 'fund' ? 'Add Funds' : 'Complete Purchase'}
-          </Text>
+          style={[styles.completeButton, loading && styles.completeButtonDisabled]}
+          onPress={handleCompleteTransaction}
+          disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <Text style={styles.completeButtonText}>Complete Transaction</Text>
+          )}
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 };
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F8F9FA',
-  },
   container: {
     flex: 1,
-    padding: 16,
-    paddingTop: 12,
-  },
-  buttonContainer: {
-    padding: 16,
     backgroundColor: '#F8F9FA',
-    borderTopWidth: 1,
-    borderTopColor: '#E9ECEF',
   },
-  errorText: {
-    fontSize: 16,
-    color: '#FF3B30',
-    textAlign: 'center',
-    marginTop: 20,
+  scrollView: {
+    flex: 1,
+    padding: 16,
   },
-  profileContainer: {
+  header: {
     marginBottom: 24,
   },
-  profileInfo: {
-    alignItems: 'flex-start',
-  },
-  profileName: {
-    fontSize: 28,
-    fontWeight: '600',
+  customerName: {
+    fontSize: 24,
+    fontWeight: '700',
     color: '#333',
     marginBottom: 4,
   },
-  profileBalance: {
+  customerId: {
     fontSize: 16,
     color: '#666',
-  },
-  mainContent: {
-    flex: 1,
-  },
-  sectionTitle: {
-    fontSize: 16,
-    fontWeight: '500',
     marginBottom: 8,
+  },
+  balance: {
+    fontSize: 20,
+    fontWeight: '600',
     color: '#333',
   },
   transactionTypeContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     marginBottom: 24,
     gap: 8,
   },
-  transactionTypeButton: {
+  typeButton: {
     flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F8F9FA',
-    paddingVertical: 14,
-    paddingHorizontal: 12,
+    backgroundColor: '#FFF',
+    paddingVertical: 12,
+    paddingHorizontal: 8,
     borderRadius: 12,
-    gap: 8,
+    alignItems: 'center',
   },
-  transactionTypeButtonActive: {
+  selectedType: {
     backgroundColor: '#007AFF',
   },
-  transactionTypeText: {
-    color: '#666',
-    fontWeight: '500',
-    fontSize: 16,
+  typeText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#333',
   },
-  transactionTypeTextActive: {
+  selectedTypeText: {
     color: '#FFF',
   },
   gallonsContainer: {
+    marginBottom: 24,
+  },
+  label: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 8,
+  },
+  gallonsInputContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 20,
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 8,
   },
-  gallonButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#F1F3F5',
-    alignItems: 'center',
-    justifyContent: 'center',
+  gallonsButton: {
+    padding: 8,
   },
-  gallonButtonText: {
-    fontSize: 24,
+  gallonsText: {
+    flex: 1,
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '600',
     color: '#333',
   },
-  gallonInputContainer: {
-    flex: 1,
-    alignItems: 'center',
+  priceText: {
+    fontSize: 14,
+    color: '#666',
+    marginTop: 8,
+    textAlign: 'center',
   },
-  gallonInput: {
-    fontSize: 24,
-    fontWeight: '500',
+  fundContainer: {
+    marginBottom: 24,
   },
   fundInputContainer: {
     flexDirection: 'row',
@@ -546,76 +506,66 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF',
     borderRadius: 12,
     padding: 12,
-    marginBottom: 20,
   },
   currencySymbol: {
-    fontSize: 24,
+    fontSize: 20,
     color: '#333',
-    marginRight: 8,
+    marginRight: 4,
   },
   fundInput: {
     flex: 1,
-    fontSize: 24,
+    fontSize: 20,
     color: '#333',
     padding: 0,
   },
-  priceContainer: {
-    backgroundColor: '#FFF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 20,
+  amountContainer: {
+    marginBottom: 24,
   },
-  priceRow: {
+  amountInputContainer: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 12,
   },
-  priceLabel: {
-    color: '#666',
+  amountInput: {
+    flex: 1,
+    fontSize: 20,
+    color: '#333',
+    padding: 0,
   },
-  priceValue: {
-    fontWeight: '500',
-  },
-  totalRow: {
-    marginTop: 8,
-    paddingTop: 8,
-    borderTopWidth: 1,
-    borderTopColor: '#F1F3F5',
-  },
-  totalLabel: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  totalValue: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#007AFF',
+  noteContainer: {
+    marginBottom: 24,
   },
   noteInput: {
     backgroundColor: '#FFF',
     borderRadius: 12,
     padding: 12,
-    height: 48,
+    height: 100,
     textAlignVertical: 'top',
-    marginBottom: 20,
+    fontSize: 16,
+    color: '#333',
   },
   completeButton: {
     backgroundColor: '#007AFF',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 8,
+    marginBottom: 24,
+  },
+  completeButtonDisabled: {
+    opacity: 0.7,
   },
   completeButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
   },
-  fundCompleteButton: {
-    backgroundColor: '#34C759',
-  },
-  insufficientBalance: {
+  errorText: {
+    fontSize: 16,
     color: '#FF3B30',
+    textAlign: 'center',
+    marginTop: 20,
   },
 });
 

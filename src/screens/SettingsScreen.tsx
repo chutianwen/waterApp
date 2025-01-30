@@ -10,10 +10,10 @@ import {
   Modal,
   Platform,
   ScrollView,
+  ActivityIndicator,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
-import * as storage from '../services/storage';
-import * as dataUtils from '../services/csvUtils';
+import * as firebase from '../services/firebase';
 import DocumentPicker from 'react-native-document-picker';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
@@ -21,16 +21,12 @@ import {Customer} from '../types/customer';
 import {Transaction} from '../types/transaction';
 import {WaterPrices} from '../types/settings';
 
-export const STORAGE_KEYS = {
-  REGULAR_WATER_PRICE: 'regularWaterPrice',
-  ALKALINE_WATER_PRICE: 'alkalineWaterPrice',
-};
-
 const SettingsScreen = () => {
   const [regularPrice, setRegularPrice] = useState('1.50');
   const [alkalinePrice, setAlkalinePrice] = useState('2.00');
   const [showOptions, setShowOptions] = useState(false);
   const [priceHistory, setPriceHistory] = useState<WaterPrices[]>([]);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
     loadPrices();
@@ -39,25 +35,30 @@ const SettingsScreen = () => {
 
   const loadPrices = async () => {
     try {
-      const prices = await storage.getWaterPrices();
+      const prices = await firebase.getWaterPrices();
       setRegularPrice(prices.regularPrice.toFixed(2));
       setAlkalinePrice(prices.alkalinePrice.toFixed(2));
     } catch (error) {
       console.error('Error loading prices:', error);
+      Alert.alert('Error', 'Failed to load water prices');
     }
   };
 
   const loadPriceHistory = async () => {
     try {
-      const history = await storage.getPriceHistory();
+      const history = await firebase.getPriceHistory();
       setPriceHistory(history);
     } catch (error) {
       console.error('Error loading price history:', error);
+      Alert.alert('Error', 'Failed to load price history');
     }
   };
 
   const handleSavePrices = async () => {
+    if (loading) return;
+
     try {
+      setLoading(true);
       const newRegularPrice = parseFloat(regularPrice);
       const newAlkalinePrice = parseFloat(alkalinePrice);
 
@@ -66,27 +67,44 @@ const SettingsScreen = () => {
         return;
       }
 
-      await storage.updateWaterPrices(newRegularPrice, newAlkalinePrice);
+      await firebase.updateWaterPrices(newRegularPrice, newAlkalinePrice);
       Alert.alert('Success', 'Prices updated successfully!');
       loadPriceHistory(); // Reload price history after update
     } catch (error) {
       console.error('Error saving prices:', error);
       Alert.alert('Error', 'Failed to update prices');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleExport = async () => {
+    if (loading) return;
+
     try {
-      // Get all data
-      const customers = await storage.getCustomers();
-      const transactions = await storage.getCustomerTransactions('all');
-      const settings = {
-        waterPrices: await storage.getWaterPrices(),
-        priceHistory: await storage.getPriceHistory(),
+      setLoading(true);
+      // Get all data from Firebase
+      const [customers, transactions, settings] = await Promise.all([
+        firebase.getCustomers(1, 1000), // Get up to 1000 customers
+        firebase.getCustomerTransactions('all', 1, 1000), // Get up to 1000 transactions
+        Promise.all([
+          firebase.getWaterPrices(),
+          firebase.getPriceHistory()
+        ])
+      ]);
+
+      // Prepare data for export
+      const exportData = {
+        customers: customers.customers,
+        transactions: transactions.transactions,
+        settings: {
+          waterPrices: settings[0],
+          priceHistory: settings[1]
+        }
       };
 
       // Convert to JSON
-      const jsonData = dataUtils.exportToJSON({customers, transactions, settings});
+      const jsonData = JSON.stringify(exportData, null, 2);
 
       // Create export file
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -108,11 +126,16 @@ const SettingsScreen = () => {
     } catch (error) {
       console.error('Error exporting data:', error);
       Alert.alert('Error', 'Failed to export data');
+    } finally {
+      setLoading(false);
     }
   };
 
   const handleImport = async () => {
+    if (loading) return;
+
     try {
+      setLoading(true);
       // Pick JSON file
       const results = await DocumentPicker.pick({
         type: [DocumentPicker.types.json],
@@ -126,35 +149,33 @@ const SettingsScreen = () => {
 
       // Read file contents
       const fileContent = await RNFS.readFile(result.uri, 'utf8');
+      const importedData = JSON.parse(fileContent);
 
-      // Convert JSON to data structure
-      const importedData = dataUtils.importFromJSON(fileContent);
+      // Validate imported data structure
+      if (!importedData.customers || !importedData.transactions || !importedData.settings) {
+        throw new Error('Invalid data format');
+      }
 
-      // Convert data to the format expected by storage
-      const storageData = {
-        customers: importedData.customers.reduce((acc, customer) => {
-          acc[customer.id] = customer;
-          return acc;
-        }, {} as Record<string, Customer>),
-        transactions: importedData.transactions.reduce((acc, transaction) => {
-          acc[transaction.id!] = transaction;
-          return acc;
-        }, {} as Record<string, Transaction>),
-        settings: importedData.settings,
-      };
-
-      // Import data
-      await storage.importData(storageData);
+      // Import data to Firebase
+      await firebase.importData(importedData);
 
       Alert.alert('Success', 'Data imported successfully!');
       setShowOptions(false);
-      loadPrices(); // Reload prices
+      
+      // Reload data
+      loadPrices();
+      loadPriceHistory();
+      
+      // Clear cache to ensure fresh data
+      firebase.clearAllCache();
     } catch (error) {
       if (DocumentPicker.isCancel(error)) {
         return;
       }
       console.error('Error importing data:', error);
       Alert.alert('Error', 'Failed to import data. Please ensure the file is in the correct format.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -231,7 +252,8 @@ const SettingsScreen = () => {
           <Text style={styles.title}>Settings</Text>
           <TouchableOpacity 
             style={styles.optionsButton}
-            onPress={() => setShowOptions(true)}>
+            onPress={() => setShowOptions(true)}
+            disabled={loading}>
             <Icon name="ellipsis-horizontal" size={24} color="#333" />
           </TouchableOpacity>
         </View>
@@ -242,67 +264,74 @@ const SettingsScreen = () => {
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Regular Water (per gallon)</Text>
             <View style={styles.priceInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={regularPrice}
-                onChangeText={(value) => handlePriceChange(value, 'regular')}
-                keyboardType="decimal-pad"
-                placeholder="0.0"
-              />
-              <View style={styles.priceButtons}>
-                <TouchableOpacity 
-                  style={styles.priceButton}
-                  onPress={() => handlePriceIncrement('regular')}>
-                  <Icon name="chevron-up" size={20} color="#007AFF" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.priceButton}
-                  onPress={() => handlePriceDecrement('regular')}>
-                  <Icon name="chevron-down" size={20} color="#007AFF" />
-                </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.priceButton}
+                onPress={() => handlePriceDecrement('regular')}
+                disabled={loading}>
+                <Icon name="remove" size={24} color="#007AFF" />
+              </TouchableOpacity>
+              <View style={styles.priceWrapper}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  value={regularPrice}
+                  onChangeText={(value) => handlePriceChange(value, 'regular')}
+                  keyboardType="decimal-pad"
+                  editable={!loading}
+                />
               </View>
+              <TouchableOpacity 
+                style={styles.priceButton}
+                onPress={() => handlePriceIncrement('regular')}
+                disabled={loading}>
+                <Icon name="add" size={24} color="#007AFF" />
+              </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.inputContainer}>
             <Text style={styles.label}>Alkaline Water (per gallon)</Text>
             <View style={styles.priceInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={alkalinePrice}
-                onChangeText={(value) => handlePriceChange(value, 'alkaline')}
-                keyboardType="decimal-pad"
-                placeholder="0.0"
-              />
-              <View style={styles.priceButtons}>
-                <TouchableOpacity 
-                  style={styles.priceButton}
-                  onPress={() => handlePriceIncrement('alkaline')}>
-                  <Icon name="chevron-up" size={20} color="#007AFF" />
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={styles.priceButton}
-                  onPress={() => handlePriceDecrement('alkaline')}>
-                  <Icon name="chevron-down" size={20} color="#007AFF" />
-                </TouchableOpacity>
+              <TouchableOpacity 
+                style={styles.priceButton}
+                onPress={() => handlePriceDecrement('alkaline')}
+                disabled={loading}>
+                <Icon name="remove" size={24} color="#007AFF" />
+              </TouchableOpacity>
+              <View style={styles.priceWrapper}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  value={alkalinePrice}
+                  onChangeText={(value) => handlePriceChange(value, 'alkaline')}
+                  keyboardType="decimal-pad"
+                  editable={!loading}
+                />
               </View>
+              <TouchableOpacity 
+                style={styles.priceButton}
+                onPress={() => handlePriceIncrement('alkaline')}
+                disabled={loading}>
+                <Icon name="add" size={24} color="#007AFF" />
+              </TouchableOpacity>
             </View>
           </View>
 
           <TouchableOpacity 
-            style={styles.saveButton}
-            onPress={handleSavePrices}>
-            <Text style={styles.saveButtonText}>Save Changes</Text>
+            style={[styles.saveButton, loading && styles.saveButtonDisabled]}
+            onPress={handleSavePrices}
+            disabled={loading}>
+            {loading ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <Text style={styles.saveButtonText}>Save Changes</Text>
+            )}
           </TouchableOpacity>
         </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Price History</Text>
-          <View style={styles.historyContainer}>
-            {priceHistory.map(renderPriceHistoryItem)}
-          </View>
+          {priceHistory.map(renderPriceHistoryItem)}
         </View>
       </ScrollView>
 
@@ -318,13 +347,15 @@ const SettingsScreen = () => {
           <View style={styles.optionsContainer}>
             <TouchableOpacity
               style={styles.optionItem}
-              onPress={handleExport}>
+              onPress={handleExport}
+              disabled={loading}>
               <Icon name="download-outline" size={24} color="#333" />
               <Text style={styles.optionText}>Export Data</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.optionItem}
-              onPress={handleImport}>
+              onPress={handleImport}
+              disabled={loading}>
               <Icon name="cloud-upload-outline" size={24} color="#333" />
               <Text style={styles.optionText}>Import Data</Text>
             </TouchableOpacity>
@@ -356,6 +387,7 @@ const styles = StyleSheet.create({
   },
   section: {
     padding: 16,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 20,
@@ -364,7 +396,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   inputContainer: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   label: {
     fontSize: 14,
@@ -376,37 +408,64 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#FFF',
     borderRadius: 12,
-    padding: 12,
+    padding: 8,
+  },
+  priceButton: {
+    padding: 8,
+  },
+  priceWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
   },
   currencySymbol: {
-    fontSize: 16,
+    fontSize: 20,
     color: '#333',
     marginRight: 4,
   },
   priceInput: {
     flex: 1,
-    fontSize: 16,
+    fontSize: 20,
     color: '#333',
     padding: 0,
-  },
-  priceButtons: {
-    flexDirection: 'column',
-    marginLeft: 8,
-  },
-  priceButton: {
-    padding: 4,
   },
   saveButton: {
     backgroundColor: '#007AFF',
     paddingVertical: 16,
     borderRadius: 12,
     alignItems: 'center',
-    marginTop: 24,
+    marginTop: 16,
+  },
+  saveButtonDisabled: {
+    opacity: 0.7,
   },
   saveButtonText: {
     color: '#FFF',
     fontSize: 16,
     fontWeight: '600',
+  },
+  historyItem: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+  },
+  historyHeader: {
+    marginBottom: 8,
+  },
+  historyDate: {
+    fontSize: 14,
+    color: '#666',
+  },
+  historyPrices: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  historyPrice: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
   },
   modalOverlay: {
     flex: 1,
@@ -430,30 +489,6 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 16,
     color: '#333',
-  },
-  historyContainer: {
-    gap: 12,
-  },
-  historyItem: {
-    backgroundColor: '#FFF',
-    borderRadius: 12,
-    padding: 16,
-  },
-  historyHeader: {
-    marginBottom: 8,
-  },
-  historyDate: {
-    fontSize: 14,
-    color: '#666',
-  },
-  historyPrices: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  historyPrice: {
-    fontSize: 16,
-    color: '#333',
-    fontWeight: '500',
   },
 });
 

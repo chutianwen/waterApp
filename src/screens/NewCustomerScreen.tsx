@@ -7,11 +7,12 @@ import {
   TextInput,
   TouchableOpacity,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import {useNavigation} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {RootStackParamList} from '../types/navigation';
-import * as storage from '../services/storage';
+import * as firebase from '../services/firebase';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -19,6 +20,7 @@ const NewCustomerScreen = () => {
   const navigation = useNavigation<NavigationProp>();
   const [name, setName] = useState('');
   const [initialFund, setInitialFund] = useState('');
+  const [loading, setLoading] = useState(false);
 
   const handleCreateCustomer = async () => {
     if (!name.trim()) {
@@ -33,13 +35,15 @@ const NewCustomerScreen = () => {
     }
 
     try {
+      setLoading(true);
       const newCustomer = {
         name: name.trim(),
         balance: fundAmount,
-        lastTransaction: 'New Customer',
+        uniqueId: Date.now().toString().slice(-6),
+        updatedAt: new Date().toISOString(),
       };
 
-      await storage.addCustomer(newCustomer);
+      await firebase.addCustomer(newCustomer);
       Alert.alert(
         'Success',
         'Customer created successfully!',
@@ -53,6 +57,8 @@ const NewCustomerScreen = () => {
     } catch (error) {
       console.error('Error creating customer:', error);
       Alert.alert('Error', 'Failed to create customer. Please try again.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -70,6 +76,7 @@ const NewCustomerScreen = () => {
             placeholder="Enter customer name"
             autoCapitalize="words"
             autoFocus
+            editable={!loading}
           />
         </View>
 
@@ -83,14 +90,20 @@ const NewCustomerScreen = () => {
               onChangeText={setInitialFund}
               placeholder="0.00"
               keyboardType="decimal-pad"
+              editable={!loading}
             />
           </View>
         </View>
 
         <TouchableOpacity 
-          style={styles.createButton}
-          onPress={handleCreateCustomer}>
-          <Text style={styles.createButtonText}>Create Customer</Text>
+          style={[styles.createButton, loading && styles.createButtonDisabled]}
+          onPress={handleCreateCustomer}
+          disabled={loading}>
+          {loading ? (
+            <ActivityIndicator color="#FFF" />
+          ) : (
+            <Text style={styles.createButtonText}>Create Customer</Text>
+          )}
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -150,6 +163,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     marginTop: 24,
+  },
+  createButtonDisabled: {
+    opacity: 0.7,
   },
   createButtonText: {
     color: '#FFF',

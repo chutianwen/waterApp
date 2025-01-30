@@ -16,7 +16,7 @@ import {useNavigation, useFocusEffect} from '@react-navigation/native';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Customer} from '../types/customer';
 import {RootStackParamList} from '../types/navigation';
-import * as storage from '../services/storage';
+import * as firebase from '../services/firebase';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
@@ -25,57 +25,84 @@ const CustomersScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [sortOrder, setSortOrder] = useState('Alphabetical');
+  const [refreshing, setRefreshing] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isSearching, setIsSearching] = useState(false);
 
   // Load customers when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      const loadCustomers = async () => {
-        try {
-          setLoading(true);
-          // Always fetch fresh data from storage
-          const loadedCustomers = await storage.getCustomers();
-          setCustomers(loadedCustomers);
-        } catch (error) {
-          console.error('Error loading customers:', error);
-          Alert.alert('Error', 'Failed to load customers. Please try again.');
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      loadCustomers();
+      loadInitialData();
       return () => {
-        // Clean up any subscriptions or pending operations
+        // Clean up
+        setCustomers([]);
+        setPage(1);
+        setHasMore(true);
       };
     }, [])
   );
 
-  const filteredCustomers = customers.filter(customer => {
-    const query = searchQuery.toLowerCase();
-    const name = customer.name.toLowerCase();
-    
-    // For single character search, match only the start of the name
-    if (query.length === 1) {
-      return name.startsWith(query);
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      const result = await firebase.getCustomers(1, 20);
+      setCustomers(result.customers);
+      setHasMore(result.hasMore);
+      setPage(1);
+    } catch (error) {
+      console.error('Error loading customers:', error);
+      Alert.alert('Error', 'Failed to load customers. Please try again.');
+    } finally {
+      setLoading(false);
     }
+  };
+
+  const loadMoreCustomers = async () => {
+    if (!hasMore || loading || isSearching) return;
+
+    try {
+      setLoading(true);
+      const nextPage = page + 1;
+      const result = await firebase.getCustomers(nextPage, 20);
+      setCustomers(prev => [...prev, ...result.customers]);
+      setHasMore(result.hasMore);
+      setPage(nextPage);
+    } catch (error) {
+      console.error('Error loading more customers:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async (text: string) => {
+    setSearchQuery(text);
     
-    // For longer searches, use includes and check all fields
-    return (
-      name.includes(query) ||
-      (customer.uniqueId?.includes(searchQuery) ?? false) ||
-      customer.balance.toString().includes(searchQuery) ||
-      (customer.lastTransaction || '').toLowerCase().includes(query)
-    );
-  });
+    if (!text.trim()) {
+      setIsSearching(false);
+      await loadInitialData();
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      setLoading(true);
+      const results = await firebase.searchCustomers(text.trim());
+      setCustomers(results);
+      setHasMore(false); // No pagination for search results
+    } catch (error) {
+      console.error('Error searching customers:', error);
+      Alert.alert('Error', 'Failed to search customers. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleCustomerPress = (customer: Customer) => {
-    // Fetch latest customer data before navigating
-    const refreshedCustomer = customers.find(c => c.id === customer.id);
     navigation.navigate('New Transaction', {
-      customer: refreshedCustomer || customer,
+      customer,
       lastTransaction: undefined
     });
   };
@@ -98,6 +125,21 @@ const CustomersScreen = () => {
     setShowOptions(false);
   };
 
+  const formatDate = (dateString?: string) => {
+    if (!dateString || dateString === 'New Customer') {
+      return 'No transactions yet';
+    }
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) {
+        return 'No transactions yet';
+      }
+      return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+    } catch {
+      return 'No transactions yet';
+    }
+  };
+
   const renderCustomerItem = ({item}: {item: Customer}) => (
     <TouchableOpacity 
       style={styles.customerItem}
@@ -106,11 +148,11 @@ const CustomersScreen = () => {
         <Text style={styles.customerName}>{item.name}</Text>
         <Text style={styles.customerId}>#{item.uniqueId}</Text>
         <Text style={styles.lastTransaction}>
-          Last transaction: {formatDate(item.lastTransaction) || 'None'}
+          {formatDate(item.lastTransaction)}
         </Text>
       </View>
       <View style={styles.rightContainer}>
-        <Text style={styles.balance}>${(item.balance || 0).toFixed(2)}</Text>
+        <Text style={styles.balance}>${item.balance.toFixed(2)}</Text>
         <TouchableOpacity 
           style={styles.optionsButton}
           onPress={() => handleOptionsPress(item.id)}>
@@ -120,11 +162,13 @@ const CustomersScreen = () => {
     </TouchableOpacity>
   );
 
-  // Add date formatting function
-  const formatDate = (dateString?: string) => {
-    if (!dateString) return '';
-    const date = new Date(dateString);
-    return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} ${date.getHours()}:${String(date.getMinutes()).padStart(2, '0')}`;
+  const renderFooter = () => {
+    if (!loading || !hasMore) return null;
+    return (
+      <View style={styles.footerLoader}>
+        <ActivityIndicator size="small" color="#007AFF" />
+      </View>
+    );
   };
 
   return (
@@ -144,25 +188,30 @@ const CustomersScreen = () => {
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name, ID, or balance"
+            placeholder="Search by name or #ID"
             value={searchQuery}
-            onChangeText={setSearchQuery}
+            onChangeText={handleSearch}
+            autoCapitalize="none"
+            autoCorrect={false}
             clearButtonMode="while-editing"
           />
         </View>
       </View>
 
-      {loading ? (
+      {loading && customers.length === 0 ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007AFF" />
         </View>
       ) : (
         <FlatList
-          data={filteredCustomers}
+          data={customers}
           renderItem={renderCustomerItem}
           keyExtractor={item => item.id}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContainer}
+          onEndReached={loadMoreCustomers}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No customers found</Text>
@@ -319,6 +368,10 @@ const styles = StyleSheet.create({
   optionText: {
     fontSize: 16,
     color: '#333',
+  },
+  footerLoader: {
+    paddingVertical: 16,
+    alignItems: 'center',
   },
 });
 
