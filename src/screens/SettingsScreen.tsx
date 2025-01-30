@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import * as firebase from '../services/firebase';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 const SettingsScreen = () => {
   const [regularPrice, setRegularPrice] = useState(1.50);
@@ -21,12 +22,20 @@ const SettingsScreen = () => {
     alkalinePrice: number;
     updatedAt: string;
   }>>([]);
+  const [regularPriceText, setRegularPriceText] = useState(regularPrice.toFixed(2));
+  const [alkalinePriceText, setAlkalinePriceText] = useState(alkalinePrice.toFixed(2));
 
   // Load saved prices when component mounts
   useEffect(() => {
     loadPrices();
     loadPriceHistory();
   }, []);
+
+  // Update text fields when prices load
+  useEffect(() => {
+    setRegularPriceText(regularPrice.toFixed(2));
+    setAlkalinePriceText(alkalinePrice.toFixed(2));
+  }, [regularPrice, alkalinePrice]);
 
   const loadPrices = async () => {
     try {
@@ -66,14 +75,66 @@ const SettingsScreen = () => {
   };
 
   const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
+    try {
+      const date = new Date(dateString);
+      // If date is invalid, use current date
+      if (isNaN(date.getTime())) {
+        const today = new Date();
+        return today.toLocaleDateString('en-US', {
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit'
+        });
+      }
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    } catch {
+      // If there's any error, show today's date
+      const today = new Date();
+      return today.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    }
+  };
+
+  const handlePriceChange = (value: string, setText: (text: string) => void) => {
+    // Allow any numeric input including decimals
+    if (!/^\d*\.?\d*$/.test(value)) {
+      return;
+    }
+    setText(value);
+  };
+
+  const handlePriceBlur = (value: string, setter: (price: number) => void) => {
+    const price = parseFloat(value);
+    if (!isNaN(price) && price >= 0) {
+      // Round to 2 decimal places when losing focus
+      const roundedPrice = Math.round(price * 100) / 100;
+      setter(roundedPrice);
+    } else {
+      setter(0);
+    }
+  };
+
+  const adjustPrice = (
+    increment: boolean,
+    setter: (price: number) => void,
+    setText: (text: string) => void,
+    currentPrice: number
+  ) => {
+    const newPrice = increment
+      ? Math.round((currentPrice + 0.05) * 100) / 100
+      : Math.round((currentPrice - 0.05) * 100) / 100;
+    
+    if (newPrice >= 0) {
+      setter(newPrice);
+      setText(newPrice.toFixed(2));
+    }
   };
 
   return (
@@ -85,38 +146,66 @@ const SettingsScreen = () => {
           <View style={styles.priceContainer}>
             <Text style={styles.label}>Regular Water (per gallon)</Text>
             <View style={styles.priceInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={regularPrice.toFixed(2)}
-                onChangeText={(value) => {
-                  const price = parseFloat(value);
-                  if (!isNaN(price)) {
-                    setRegularPrice(price);
-                  }
-                }}
-                keyboardType="decimal-pad"
-                editable={!loading}
-              />
+              <TouchableOpacity
+                style={styles.priceButton}
+                onPress={() => adjustPrice(false, setRegularPrice, setRegularPriceText, regularPrice)}
+                disabled={loading || regularPrice <= 0}>
+                <Icon
+                  name="remove"
+                  size={24}
+                  color={regularPrice <= 0 ? '#CCC' : '#007AFF'}
+                />
+              </TouchableOpacity>
+              <View style={styles.priceInputWrapper}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  value={regularPriceText}
+                  onChangeText={(value) => handlePriceChange(value, setRegularPriceText)}
+                  onBlur={() => handlePriceBlur(regularPriceText, setRegularPrice)}
+                  keyboardType="decimal-pad"
+                  editable={!loading}
+                />
+              </View>
+              <TouchableOpacity
+                style={styles.priceButton}
+                onPress={() => adjustPrice(true, setRegularPrice, setRegularPriceText, regularPrice)}
+                disabled={loading}>
+                <Icon name="add" size={24} color="#007AFF" />
+              </TouchableOpacity>
             </View>
           </View>
 
           <View style={styles.priceContainer}>
             <Text style={styles.label}>Alkaline Water (per gallon)</Text>
             <View style={styles.priceInputContainer}>
-              <Text style={styles.currencySymbol}>$</Text>
-              <TextInput
-                style={styles.priceInput}
-                value={alkalinePrice.toFixed(2)}
-                onChangeText={(value) => {
-                  const price = parseFloat(value);
-                  if (!isNaN(price)) {
-                    setAlkalinePrice(price);
-                  }
-                }}
-                keyboardType="decimal-pad"
-                editable={!loading}
-              />
+              <TouchableOpacity
+                style={styles.priceButton}
+                onPress={() => adjustPrice(false, setAlkalinePrice, setAlkalinePriceText, alkalinePrice)}
+                disabled={loading || alkalinePrice <= 0}>
+                <Icon
+                  name="remove"
+                  size={24}
+                  color={alkalinePrice <= 0 ? '#CCC' : '#007AFF'}
+                />
+              </TouchableOpacity>
+              <View style={styles.priceInputWrapper}>
+                <Text style={styles.currencySymbol}>$</Text>
+                <TextInput
+                  style={styles.priceInput}
+                  value={alkalinePriceText}
+                  onChangeText={(value) => handlePriceChange(value, setAlkalinePriceText)}
+                  onBlur={() => handlePriceBlur(alkalinePriceText, setAlkalinePrice)}
+                  keyboardType="decimal-pad"
+                  editable={!loading}
+                />
+              </View>
+              <TouchableOpacity
+                style={styles.priceButton}
+                onPress={() => adjustPrice(true, setAlkalinePrice, setAlkalinePriceText, alkalinePrice)}
+                disabled={loading}>
+                <Icon name="add" size={24} color="#007AFF" />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -189,7 +278,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#F8F9FA',
     borderRadius: 8,
-    padding: 12,
+    padding: 8,
+    gap: 8,
+  },
+  priceButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#FFF',
+  },
+  priceInputWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFF',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   currencySymbol: {
     fontSize: 20,
@@ -201,6 +305,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     color: '#333',
     padding: 0,
+    textAlign: 'center',
   },
   saveButton: {
     backgroundColor: '#007AFF',

@@ -39,7 +39,22 @@ const TransactionScreen = () => {
   // Load data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      loadInitialData();
+      const customer = route.params?.params?.customer;
+      const initialSearchTerm = route.params?.params?.searchTerm;
+
+      // If we have a customer, set their membershipId in search box
+      if (initialSearchTerm) {
+        setSearchQuery(initialSearchTerm);
+        handleSearch(initialSearchTerm);
+      } else {
+        // If we have a customer, load only their transactions
+        if (customer) {
+          loadCustomerTransactions(customer.id);
+        } else {
+          loadInitialData();
+        }
+      }
+      
       return () => {
         // Clean up
         setTransactions([]);
@@ -56,9 +71,8 @@ const TransactionScreen = () => {
       const loadedCustomers = await firebase.getCustomers(1, 100);
       setCustomers(loadedCustomers.customers);
 
-      // Load transactions
-      const customerId = route.params?.params?.customer?.id;
-      const result = await firebase.getCustomerTransactions(customerId || 'all', 1, PAGE_SIZE);
+      // Load all transactions
+      const result = await firebase.getCustomerTransactions('all', 1, PAGE_SIZE);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
       setPage(1);
@@ -70,39 +84,72 @@ const TransactionScreen = () => {
     }
   };
 
-  const loadMoreTransactions = async () => {
-    if (!hasMore || loading || isSearching) return;
-
+  const loadCustomerTransactions = async (customerId: string) => {
     try {
       setLoading(true);
-      const nextPage = page + 1;
-      const customerId = route.params?.params?.customer?.id;
-      const result = await firebase.getCustomerTransactions(customerId || 'all', nextPage, PAGE_SIZE);
-      setTransactions(prev => [...prev, ...result.transactions]);
+      // Load customers for name display
+      const loadedCustomers = await firebase.getCustomers(1, 100);
+      setCustomers(loadedCustomers.customers);
+
+      // Load specific customer's transactions
+      const result = await firebase.getCustomerTransactions(customerId, 1, PAGE_SIZE);
+      setTransactions(result.transactions);
       setHasMore(result.hasMore);
-      setPage(nextPage);
+      setPage(1);
     } catch (error) {
-      console.error('Error loading more transactions:', error);
+      console.error('Error loading customer transactions:', error);
+      Alert.alert('Error', 'Failed to load transactions. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = async (text: string) => {
-    setSearchQuery(text);
-    
-    if (!text.trim()) {
-      setIsSearching(false);
-      await loadInitialData();
-      return;
-    }
+  const loadMoreTransactions = async () => {
+    if (!hasMore || loading) return;
 
     try {
-      setIsSearching(true);
       setLoading(true);
-      const results = await firebase.searchTransactions(text.trim());
-      setTransactions(results);
-      setHasMore(false); // No pagination for search results
+      let result;
+
+      if (searchQuery) {
+        // Load more search results
+        result = await firebase.searchTransactions(searchQuery, page + 1, PAGE_SIZE);
+      } else {
+        // Load more regular transactions
+        const customer = route.params?.params?.customer;
+        if (customer) {
+          result = await firebase.getCustomerTransactions(customer.id, page + 1, PAGE_SIZE);
+        } else {
+          result = await firebase.getCustomerTransactions('all', page + 1, PAGE_SIZE);
+        }
+      }
+
+      setTransactions([...transactions, ...result.transactions]);
+      setHasMore(result.hasMore);
+      setPage(page + 1);
+    } catch (error) {
+      console.error('Error loading more transactions:', error);
+      Alert.alert('Error', 'Failed to load more transactions. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async (query: string) => {
+    try {
+      setLoading(true);
+      setSearchQuery(query);
+      
+      if (!query.trim()) {
+        loadInitialData();
+        return;
+      }
+
+      // Search transactions by membership ID
+      const result = await firebase.searchTransactions(query.trim(), 1, PAGE_SIZE);
+      setTransactions(result.transactions);
+      setHasMore(result.hasMore);
+      setPage(1);
     } catch (error) {
       console.error('Error searching transactions:', error);
       Alert.alert('Error', 'Failed to search transactions. Please try again.');
@@ -171,13 +218,19 @@ const TransactionScreen = () => {
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by customer name or membership ID"
+            placeholder="Search by membership ID"
             value={searchQuery}
-            onChangeText={handleSearch}
+            onChangeText={text => {
+              // Only allow digits
+              const numericText = text.replace(/[^0-9]/g, '');
+              handleSearch(numericText);
+            }}
             autoCapitalize="none"
             autoCorrect={false}
             clearButtonMode="while-editing"
             returnKeyType="search"
+            keyboardType="numeric"
+            maxLength={5}
           />
         </View>
       </View>

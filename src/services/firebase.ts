@@ -232,8 +232,9 @@ export const searchCustomers = async (searchTerm: string): Promise<Customer[]> =
         .where('membershipId', '==', paddedTerm)
         .limit(20);
     } else {
-      // Text search on name field - exact case matching
+      
       query = customersRef()
+        .orderBy('name')
         .where('name', '>=', term)
         .where('name', '<=', term + '\uf8ff')
         .limit(20);
@@ -251,6 +252,13 @@ export const searchCustomers = async (searchTerm: string): Promise<Customer[]> =
       };
     });
 
+    // Sort by lastTransaction date in memory
+    results.sort((a, b) => {
+      const dateA = a.lastTransaction ? new Date(a.lastTransaction).getTime() : 0;
+      const dateB = b.lastTransaction ? new Date(b.lastTransaction).getTime() : 0;
+      return dateB - dateA; // descending order (most recent first)
+    });
+
     cache.searchResults.set(cacheKey, results);
     return results;
   } catch (error) {
@@ -261,7 +269,7 @@ export const searchCustomers = async (searchTerm: string): Promise<Customer[]> =
 
 // Transaction Operations
 export const addTransactionAndUpdateCustomer = async (
-  transaction: Omit<Transaction, 'id' | 'createdAt'>,
+  transaction: Omit<Transaction, 'id' | 'createdAt' | 'membershipId'>,
   customerUpdate: Partial<Customer>
 ): Promise<{
   transaction: Transaction;
@@ -397,39 +405,44 @@ export const getCustomerTransactions = async (
   }
 };
 
-export const searchTransactions = async (searchTerm: string): Promise<Transaction[]> => {
+export const searchTransactions = async (
+  searchTerm: string,
+  page: number = 1,
+  pageSize: number = 20,
+  forceRefresh: boolean = false
+): Promise<{
+  transactions: Transaction[];
+  hasMore: boolean;
+}> => {
   try {
-    const cacheKey = `search_transactions_${searchTerm}`;
-    const cachedResult = cache.searchResults.get(cacheKey);
+    const cacheKey = `search_transactions_${searchTerm}_${page}`;
+    const cachedResult = !forceRefresh && cache.transactions.get(cacheKey);
     if (cachedResult) {
-      return cachedResult as Transaction[];
+      return {
+        transactions: cachedResult.data,
+        hasMore: !!cachedResult.lastDoc
+      };
     }
 
-    let query;
-    const term = searchTerm.trim();
-    
-    // If the search term is numeric (for membershipId)
-    if (/^\d+$/.test(term)) {
-      // Pad the search term to 5 digits if it's shorter
-      const paddedTerm = term.padStart(5, '0');
-      query = transactionsRef()
-        .where('membershipId', '==', paddedTerm)
-        .limit(20);
-    } else {
-      // For non-numeric search, we'll need to first find matching customers
-      const customers = await searchCustomers(term);
-      if (customers.length === 0) {
-        return [];
-      }
+    // Pad the search term to 5 digits if it's shorter
+    const paddedTerm = searchTerm.trim().padStart(5, '0');
+    let query = transactionsRef()
+      .where('membershipId', '==', paddedTerm)
+      .orderBy('createdAt', 'desc')
+      .limit(pageSize + 1);
 
-      // Get transactions for the first matching customer only
-      query = transactionsRef()
-        .where('customerId', '==', customers[0].id)
-        .limit(20);
+    if (page > 1) {
+      const prevPageKey = `search_transactions_${searchTerm}_${page - 1}`;
+      const prevPageData = cache.transactions.get(prevPageKey);
+      if (prevPageData?.lastDoc) {
+        query = query.startAfter(prevPageData.lastDoc);
+      }
     }
 
     const snapshot = await query.get();
-    const transactions = snapshot.docs.map(doc => {
+    const hasMore = snapshot.docs.length > pageSize;
+    const docs = hasMore ? snapshot.docs.slice(0, -1) : snapshot.docs;
+    const transactions = docs.map(doc => {
       const data = doc.data();
       const createdAt = data.createdAt?.toDate?.() || new Date();
       return {
@@ -438,8 +451,12 @@ export const searchTransactions = async (searchTerm: string): Promise<Transactio
       };
     });
 
-    cache.searchResults.set(cacheKey, transactions);
-    return transactions;
+    cache.transactions.set(cacheKey, {
+      data: transactions,
+      lastDoc: docs[docs.length - 1]
+    });
+
+    return { transactions, hasMore };
   } catch (error) {
     console.error('Error searching transactions:', error);
     throw error;

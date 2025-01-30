@@ -116,9 +116,9 @@ const CustomersScreen = () => {
     const customer = customers.find(c => c.id === selectedCustomerId);
     if (customer) {
       navigation.navigate('History', {
-        screen: 'TransactionList',
         params: {
-          customer
+          customer,
+          searchTerm: customer.membershipId
         }
       });
     }

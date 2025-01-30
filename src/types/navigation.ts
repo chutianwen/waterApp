@@ -15,6 +15,7 @@ export type RootStackParamList = {
     screen?: string;
     params?: {
       customer?: Customer;
+      searchTerm?: string;
     };
   };
   Settings: undefined;
