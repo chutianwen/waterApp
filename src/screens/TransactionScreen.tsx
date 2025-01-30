@@ -126,7 +126,7 @@ const TransactionScreen = () => {
               {customer?.name || 'Unknown Customer'}
             </Text>
             <Text style={styles.customerId}>
-              #{customer?.uniqueId || ''}
+              #{item.membershipId || ''}
             </Text>
             <Text style={styles.time}>{item.createdAt ? formatDate(item.createdAt) : 'Unknown date'}</Text>
           </View>
@@ -171,7 +171,7 @@ const TransactionScreen = () => {
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by customer name or #ID"
+            placeholder="Search by customer name or membership ID"
             value={searchQuery}
             onChangeText={handleSearch}
             autoCapitalize="none"

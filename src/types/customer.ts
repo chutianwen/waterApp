@@ -1,6 +1,6 @@
 export interface Customer {
   id: string;
-  uniqueId: string; // 4-digit unique identifier
+  membershipId: string; // 5-digit unique identifier
   name: string;
   phone?: string;
   balance: number;

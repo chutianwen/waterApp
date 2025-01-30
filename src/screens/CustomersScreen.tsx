@@ -146,7 +146,7 @@ const CustomersScreen = () => {
       onPress={() => handleCustomerPress(item)}>
       <View style={styles.customerInfo}>
         <Text style={styles.customerName}>{item.name}</Text>
-        <Text style={styles.customerId}>#{item.uniqueId}</Text>
+        <Text style={styles.customerId}>#{item.membershipId}</Text>
         <Text style={styles.lastTransaction}>
           {formatDate(item.lastTransaction)}
         </Text>
@@ -188,7 +188,7 @@ const CustomersScreen = () => {
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search by name or #ID"
+            placeholder="Search by name or membership ID"
             value={searchQuery}
             onChangeText={handleSearch}
             autoCapitalize="none"
