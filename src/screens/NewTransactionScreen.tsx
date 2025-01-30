@@ -267,7 +267,7 @@ const NewTransactionScreen = () => {
       <ScrollView style={styles.scrollView}>
         <View style={styles.header}>
           <Text style={styles.customerName}>{currentCustomer.name}</Text>
-          <Text style={styles.customerId}>#{currentCustomer.uniqueId}</Text>
+          <Text style={styles.customerId}>#{currentCustomer.membershipId}</Text>
           <Text style={styles.balance}>
             Balance: ${currentCustomer.balance.toFixed(2)}
           </Text>

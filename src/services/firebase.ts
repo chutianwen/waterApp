@@ -215,14 +215,14 @@ export const getCustomers = async (
 
 export const searchCustomers = async (searchTerm: string): Promise<Customer[]> => {
   try {
-    const cacheKey = `search_${searchTerm.toLowerCase()}`;
+    const cacheKey = `search_${searchTerm}`;
     const cachedResult = cache.searchResults.get(cacheKey);
     if (cachedResult) {
       return cachedResult as Customer[];
     }
 
     let query;
-    const term = searchTerm.trim().toLowerCase();
+    const term = searchTerm.trim();
     
     // Check if search term is numeric (for membershipId)
     if (/^\d+$/.test(term)) {
@@ -230,18 +230,12 @@ export const searchCustomers = async (searchTerm: string): Promise<Customer[]> =
       const paddedTerm = term.padStart(5, '0');
       query = customersRef()
         .where('membershipId', '==', paddedTerm)
-        .orderBy('lastTransaction', 'desc')
         .limit(20);
     } else {
-      // Text search on name field
-      const startStr = term;
-      const endStr = term + '\uf8ff';
-      
+      // Text search on name field - exact case matching
       query = customersRef()
-        .orderBy('name')
-        .where('name', '>=', startStr)
-        .where('name', '<=', endStr)
-        .orderBy('lastTransaction', 'desc')
+        .where('name', '>=', term)
+        .where('name', '<=', term + '\uf8ff')
         .limit(20);
     }
 
@@ -296,8 +290,11 @@ export const addTransactionAndUpdateCustomer = async (
     const transactionRef = transactionsRef().doc();
     batch.set(transactionRef, {
       ...cleanTransaction,
-      customerId: transaction.customerId, // Keep Firestore ID
-      membershipId: customerData.membershipId, // Add membershipId
+      customerId: transaction.customerId,
+      membershipId: customerData.membershipId,
+      customerBalance: transaction.customerBalance,
+      amount: transaction.amount,
+      type: transaction.type,
       createdAt: serverTimestamp(),
     });
 
@@ -324,6 +321,9 @@ export const addTransactionAndUpdateCustomer = async (
         ...cleanTransaction,
         customerId: transaction.customerId,
         membershipId: customerData.membershipId,
+        customerBalance: transaction.customerBalance,
+        amount: transaction.amount,
+        type: transaction.type,
         id: transactionRef.id,
         createdAt: new Date().toISOString(),
       } as Transaction,
@@ -406,30 +406,25 @@ export const searchTransactions = async (searchTerm: string): Promise<Transactio
     }
 
     let query;
-    const term = searchTerm.trim().toLowerCase();
+    const term = searchTerm.trim();
     
     // If the search term is numeric (for membershipId)
     if (/^\d+$/.test(term)) {
       // Pad the search term to 5 digits if it's shorter
       const paddedTerm = term.padStart(5, '0');
-      
-      // Search transactions directly by membershipId
       query = transactionsRef()
         .where('membershipId', '==', paddedTerm)
-        .orderBy('createdAt', 'desc')
         .limit(20);
     } else {
-      // Text search by customer name
-      const customers = await searchCustomers(searchTerm);
+      // For non-numeric search, we'll need to first find matching customers
+      const customers = await searchCustomers(term);
       if (customers.length === 0) {
         return [];
       }
 
-      // Get transactions for all matching customers using their Firestore IDs
-      const customerIds = customers.map(c => c.id);
+      // Get transactions for the first matching customer only
       query = transactionsRef()
-        .where('customerId', 'in', customerIds)
-        .orderBy('createdAt', 'desc')
+        .where('customerId', '==', customers[0].id)
         .limit(20);
     }
 

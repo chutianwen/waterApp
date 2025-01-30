@@ -39,7 +39,6 @@ const NewCustomerScreen = () => {
       const newCustomer = {
         name: name.trim(),
         balance: fundAmount,
-        uniqueId: Date.now().toString().slice(-6),
         updatedAt: new Date().toISOString(),
       };
 
