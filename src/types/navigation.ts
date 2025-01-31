@@ -3,12 +3,15 @@ import {Transaction} from './transaction';
 
 export type MainTabParamList = {
   Customers: undefined;
-  History: undefined;
+  History: { highlightTransactionId?: string } | undefined;
   Settings: undefined;
 };
 
 export type RootStackParamList = {
-  Main: undefined;
+  Main: {
+    screen?: keyof MainTabParamList;
+    params?: MainTabParamList[keyof MainTabParamList];
+  } | undefined;
   'New Customer': undefined;
   'New Transaction': {
     customer: Customer;

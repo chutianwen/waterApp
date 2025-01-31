@@ -210,43 +210,23 @@ const NewTransactionScreen = () => {
         }
       );
 
-      // Update local state and navigation params
-      setCurrentCustomer(updatedCustomer);
-      navigation.setParams({ 
-        customer: updatedCustomer,
-        lastTransaction: createdTransaction 
-      });
-
-      // Show success message
-      if (transactionType === 'fund') {
-        Alert.alert('Success', `$${totalAmount.toFixed(2)} added to ${currentCustomer.name}'s balance.`);
-        setFundAmount('');
-        setNote('');
-      } else {
-        const waterType = transactionType === 'regular' ? 'Regular' : 'Alkaline';
-        const message = `${gallons} gallons of ${waterType} Water purchased for $${totalAmount.toFixed(2)}`;
-        
-        if (Platform.OS === 'android') {
-          ToastAndroid.showWithGravityAndOffset(
-            message,
-            ToastAndroid.LONG,
-            ToastAndroid.TOP,
-            0,
-            100
-          );
-        } else {
-          Alert.alert('Success', message);
-        }
-
-        // Reset form
-        setGallons(5);
-        setNote('');
-        setAdjustedAmount('');
-      }
-
       // Clear Firebase cache to ensure fresh data
       firebase.clearCache('customers');
       firebase.clearCache('transactions');
+
+      // Reset navigation state and go to History tab
+      navigation.reset({
+        index: 0,
+        routes: [
+          {
+            name: 'Main',
+            params: {
+              screen: 'History',
+              params: { highlightTransactionId: createdTransaction.id }
+            }
+          }
+        ]
+      });
 
     } catch (error) {
       console.error('Error creating transaction:', error);

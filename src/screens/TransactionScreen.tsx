@@ -12,11 +12,12 @@ import {
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Transaction} from '../types/transaction';
 import * as firebase from '../services/firebase';
-import {useNavigation, useFocusEffect} from '@react-navigation/native';
-import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
+import {useNavigation, useFocusEffect, useRoute} from '@react-navigation/native';
+import type {BottomTabNavigationProp, BottomTabScreenProps} from '@react-navigation/bottom-tabs';
 import { MainTabParamList } from '../types/navigation';
 
 type NavigationProp = BottomTabNavigationProp<MainTabParamList>;
+type RouteProps = BottomTabScreenProps<MainTabParamList, 'History'>['route'];
 
 const PAGE_SIZE = 20;
 
@@ -28,7 +29,28 @@ const TransactionScreen = () => {
   const [hasMore, setHasMore] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [highlightedTransactionId, setHighlightedTransactionId] = useState<string | null>(null);
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<RouteProps>();
+
+  // Handle route params for highlighting transactions
+  React.useEffect(() => {
+    if (route.params?.highlightTransactionId) {
+      setHighlightedTransactionId(route.params.highlightTransactionId);
+      // Clear the route params to avoid re-highlighting on tab switches
+      navigation.setParams({ highlightTransactionId: undefined });
+    }
+  }, [route.params?.highlightTransactionId]);
+
+  // Clear highlight after 3 seconds
+  React.useEffect(() => {
+    if (highlightedTransactionId) {
+      const timer = setTimeout(() => {
+        setHighlightedTransactionId(null);
+      }, 3000);
+      return () => clearTimeout(timer);
+    }
+  }, [highlightedTransactionId]);
 
   // Load data when screen comes into focus
   useFocusEffect(
@@ -159,8 +181,13 @@ const TransactionScreen = () => {
   const renderTransactionItem = ({item}: {item: Transaction}) => {
     if (!item.createdAt) return null;
     
+    const isHighlighted = item.id === highlightedTransactionId;
+    
     return (
-      <View style={styles.transactionItem}>
+      <View style={[
+        styles.transactionItem,
+        isHighlighted && styles.highlightedTransaction
+      ]}>
         <View style={styles.transactionHeader}>
           <View style={styles.customerInfo}>
             <Text style={styles.customerName}>{item.customerName || item.membershipId}</Text>
@@ -184,6 +211,12 @@ const TransactionScreen = () => {
         </View>
         {item.notes && (
           <Text style={styles.notes}>{item.notes}</Text>
+        )}
+        {isHighlighted && (
+          <View style={styles.successBadge}>
+            <Icon name="checkmark-circle" size={20} color="#fff" />
+            <Text style={styles.successText}>Transaction Complete</Text>
+          </View>
         )}
       </View>
     );
@@ -391,6 +424,28 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  highlightedTransaction: {
+    backgroundColor: '#E3F2FD',
+    borderWidth: 2,
+    borderColor: '#2196F3',
+  },
+  successBadge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: '#4CAF50',
+    borderRadius: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+  },
+  successText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 4,
   },
 });
 
