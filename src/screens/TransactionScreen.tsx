@@ -8,6 +8,7 @@ import {
   FlatList,
   ActivityIndicator,
   Alert,
+  TouchableOpacity,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Transaction} from '../types/transaction';
@@ -141,16 +142,30 @@ const TransactionScreen = () => {
     return `${date.getMonth() + 1}/${date.getDate()}/${date.getFullYear()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
   };
 
+  const handleTransactionPress = (transaction: Transaction) => {
+    navigation.getParent()?.navigate('New Transaction', {
+      customer: {
+        id: transaction.customerId,
+        name: transaction.customerName,
+        membershipId: transaction.membershipId,
+        balance: transaction.customerBalance,
+      },
+      lastTransaction: transaction
+    });
+  };
+
   const renderTransactionItem = ({item}: {item: Transaction}) => {
     if (!item.createdAt) return null;
     
     const isHighlighted = item.id === highlightedTransactionId;
     
     return (
-      <View style={[
-        styles.transactionItem,
-        isHighlighted && styles.highlightedTransaction
-      ]}>
+      <TouchableOpacity 
+        onPress={() => handleTransactionPress(item)}
+        style={[
+          styles.transactionItem,
+          isHighlighted && styles.highlightedTransaction
+        ]}>
         <View style={styles.transactionHeader}>
           <View style={styles.customerInfo}>
             <Text style={styles.customerName}>{item.customerName || item.membershipId}</Text>
@@ -181,7 +196,7 @@ const TransactionScreen = () => {
             <Text style={styles.successText}>Transaction Complete</Text>
           </View>
         )}
-      </View>
+      </TouchableOpacity>
     );
   };
 
