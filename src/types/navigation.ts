@@ -8,10 +8,8 @@ export type MainTabParamList = {
 };
 
 export type RootStackParamList = {
-  Main: {
-    screen?: keyof MainTabParamList;
-    params?: MainTabParamList[keyof MainTabParamList];
-  } | undefined;
+  Main: undefined;
+  Login: undefined;
   'New Customer': undefined;
   'New Transaction': {
     customer: Customer;

@@ -6,13 +6,13 @@
 #
 build/
 *.pbxuser
-!default.pbxuser
+!default.*.pbxuser
 *.mode1v3
-!default.mode1v3
+!default.*.mode1v3
 *.mode2v3
-!default.mode2v3
+!default.*.mode2v3
 *.perspectivev3
-!default.perspectivev3
+!default.*.perspectivev3
 xcuserdata
 *.xccheckout
 *.moved-aside
@@ -58,30 +58,74 @@ yarn-error.log
 
 # Ruby / CocoaPods
 /ios/Pods/
-/ios/Podfile.lock
 /vendor/bundle/
 
-# Temporary files created by Metro to check the health of the file watcher
-.metro-health-check*
+# Firebase
+google-services.json
+GoogleService-Info.plist
+service-account-key.json
+firebase-debug.log
+.firebase/
 
-# testing
-/coverage
-
-# Expo
-.expo/
-dist/
-web-build/
-
-# Local env files
+# Environment variables
 .env
-.env*.local
+.env.*
+!.env.example
 
-# TypeScript
-*.tsbuildinfo
+# Testing
+coverage/
+__snapshots__/
 
-# Editor directories and files
+# IDE
 .vscode/
+.idea/
 *.swp
 *.swo
-*.swn
-*.bak
+
+# Temporary files
+*.log
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# Build output
+dist/
+build/
+*.tsbuildinfo
+
+# Dependency directories
+node_modules/
+ios/Pods/
+
+# Debug files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Editor directories and files
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# iOS specific
+ios/build/
+ios/Pods/
+ios/*.xcworkspace/
+ios/*.xcodeproj/xcuserdata/
+ios/*.xcodeproj/project.xcworkspace/xcuserdata/
+ios/Index/
+
+# Android specific
+android/app/build/
+android/build/
+android/gradle/
+android/local.properties
+android/.gradle/
+android/*.iml
+android/.idea/
+android/captures/
+android/app/release/

@@ -9,7 +9,7 @@ import React from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {TouchableOpacity, Text} from 'react-native';
+import {TouchableOpacity, ActivityIndicator, View} from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import type {CompositeNavigationProp} from '@react-navigation/native';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
@@ -20,7 +20,8 @@ import NewTransactionScreen from './src/screens/NewTransactionScreen';
 import TransactionScreen from './src/screens/TransactionScreen';
 import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import {AddCustomerButton} from './src/components/AddCustomerButton';
+import LoginScreen from './src/screens/LoginScreen';
+import {AuthProvider, useAuth} from './src/contexts/AuthContext';
 import {RootStackParamList, MainTabParamList} from './src/types/navigation';
 
 type NavigationProp = CompositeNavigationProp<
@@ -32,6 +33,8 @@ const Tab = createBottomTabNavigator<MainTabParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 const TabNavigator = () => {
+  const {signOut} = useAuth();
+  
   return (
     <Tab.Navigator
       screenOptions={({route}) => ({
@@ -60,50 +63,65 @@ const TabNavigator = () => {
       <Tab.Screen
         name="Customers"
         component={CustomersScreen}
-        options={({ navigation }) => ({
+        options={({navigation}) => ({
           headerRight: () => (
             <TouchableOpacity
-              style={{ marginRight: 16 }}
+              style={{marginRight: 16}}
               onPress={() => navigation.getParent()?.navigate('New Customer')}>
               <Icon name="person-add" size={20} color="#007AFF" />
             </TouchableOpacity>
           ),
-          tabBarIcon: ({ color, size }) => (
-            <Icon name="people" size={size} color={color} />
-          ),
         })}
       />
-      <Tab.Screen 
-        name="History" 
+      <Tab.Screen
+        name="History"
         component={TransactionScreen}
         options={{
           headerTitle: 'Transaction History',
         }}
       />
-      <Tab.Screen 
-        name="Settings" 
+      <Tab.Screen
+        name="Settings"
         component={SettingsScreen}
         options={{
           headerTitle: 'Settings',
+          headerRight: () => (
+            <TouchableOpacity
+              style={{marginRight: 16}}
+              onPress={signOut}>
+              <Icon name="log-out-outline" size={20} color="#007AFF" />
+            </TouchableOpacity>
+          ),
         }}
       />
     </Tab.Navigator>
   );
 };
 
-const App = () => {
+const Navigation = () => {
+  const {user, loading} = useAuth();
+
+  if (loading) {
+    return (
+      <View style={{flex: 1, justifyContent: 'center', alignItems: 'center'}}>
+        <ActivityIndicator size="large" color="#007AFF" />
+      </View>
+    );
+  }
+
   return (
     <NavigationContainer>
+      {user ? (
         <RootStack.Navigator>
           <RootStack.Group>
-            <RootStack.Screen 
-              name="Main" 
+            <RootStack.Screen
+              name="Main"
               component={TabNavigator}
               options={{headerShown: false}}
             />
           </RootStack.Group>
 
-          <RootStack.Group 
+          <RootStack.Group
             screenOptions={{
               presentation: 'transparentModal',
               animation: 'fade',
@@ -112,12 +130,12 @@ const App = () => {
               headerTransparent: true,
               headerLeft: () => null,
             }}>
-            <RootStack.Screen 
-              name="New Customer" 
+            <RootStack.Screen
+              name="New Customer"
               component={NewCustomerScreen}
               options={({navigation}) => ({
                 headerRight: () => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => navigation.goBack()}
                     style={{padding: 8}}>
                     <Icon name="close" size={24} color="#333" />
@@ -125,12 +143,12 @@ const App = () => {
                 ),
               })}
             />
-            <RootStack.Screen 
-              name="New Transaction" 
+            <RootStack.Screen
+              name="New Transaction"
               component={NewTransactionScreen}
               options={({navigation}) => ({
                 headerRight: () => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => navigation.goBack()}
                     style={{padding: 8}}>
                     <Icon name="close" size={24} color="#333" />
@@ -138,12 +156,12 @@ const App = () => {
                 ),
               })}
             />
-            <RootStack.Screen 
-              name="Customer Profile" 
+            <RootStack.Screen
+              name="Customer Profile"
               component={CustomerProfileScreen}
               options={({navigation}) => ({
                 headerRight: () => (
-                  <TouchableOpacity 
+                  <TouchableOpacity
                     onPress={() => navigation.goBack()}
                     style={{padding: 8}}>
                     <Icon name="close" size={24} color="#333" />
@@ -153,7 +171,24 @@ const App = () => {
             />
           </RootStack.Group>
         </RootStack.Navigator>
+      ) : (
+        <RootStack.Navigator>
+          <RootStack.Screen
+            name="Login"
+            component={LoginScreen}
+            options={{headerShown: false}}
+          />
+        </RootStack.Navigator>
+      )}
     </NavigationContainer>
+  );
+};
+
+const App = () => {
+  return (
+    <AuthProvider>
+      <Navigation />
+    </AuthProvider>
   );
 };
 

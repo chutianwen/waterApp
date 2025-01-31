@@ -1,228 +1,123 @@
-# Water App - React Native iOS Application
+# Water App
 
-## Project Setup
+A React Native application for managing water sales and customer transactions.
 
-### Prerequisites
-- Node.js (>=18)
-- Xcode
-- CocoaPods
-- Ruby
+## Features
 
-### Initial Project Creation
+- Customer Management
+  - Add and edit customers
+  - Track customer balances
+  - View customer transaction history
+  - Search customers by name or membership ID
+
+- Transaction Processing
+  - Record water purchases
+  - Add funds to customer accounts
+  - Support for regular and alkaline water
+  - Real-time balance updates
+
+- Authentication & Security
+  - Admin-only access
+  - Secure authentication with Firebase
+  - Role-based permissions
+
+## Prerequisites
+
+- Node.js >= 18
+- npm or yarn
+- React Native development environment setup
+- Firebase account and project
+
+## Installation
+
+1. Clone the repository:
 ```bash
-# Create new React Native project with TypeScript template
-npx react-native init waterApp --template react-native-template-typescript
-
-If not working, use this:
-npx @react-native-community/cli init waterApp --version 0.73.5
-
-# Navigate to project directory
+git clone [your-repo-url]
 cd waterApp
+```
 
-# Install dependencies
+2. Install dependencies:
+```bash
 npm install
-
-# Install required navigation and UI dependencies
-npm install @react-navigation/native @react-navigation/bottom-tabs @react-navigation/native-stack react-native-vector-icons react-native-screens react-native-safe-area-context @react-native-async-storage/async-storage
 ```
 
-### Version Control Setup
-The project includes a comprehensive `.gitignore` file that excludes:
-- Build artifacts and dependencies (`/ios/Pods/`, `node_modules/`)
-- IDE and editor files (`.vscode/`, Xcode userdata)
-- Environment and local config files (`.env`)
-- Temporary and system files (`.DS_Store`)
-- Debug logs and crash reports
-- Test coverage reports
+3. Firebase Setup:
+   - Create a new Firebase project at [Firebase Console](https://console.firebase.google.com)
+   - Enable Authentication (Email/Password)
+   - Enable Firestore Database
+   - Download your service account key:
+     - Go to Project Settings > Service Accounts
+     - Click "Generate New Private Key"
+     - Save as `service-account-key.json` in project root
 
-Make sure to commit the `.gitignore` file first before adding other project files to avoid tracking unnecessary files.
-
-### iOS Setup
+4. Create your first admin user:
 ```bash
-# Navigate to iOS directory
-cd ios
-
-# Install CocoaPods dependencies
-# Some issues of faliures, please refer to flipper error which needs to be disabled through the podfile.
-pod install
-
+npx ts-node --esm scripts/createAdmin.ts your-email@example.com your-password
 ```
 
-### Running the App
+5. Set up Firebase Security Rules:
+   - Go to Firestore Database > Rules
+   - Copy and paste the security rules from `firebase-rules.md`
+
+## Running the App
+
+### iOS
 ```bash
-# Start Metro bundler (in project root)
-npx react-native start
-
-# In another terminal, build and run iOS app
-npx react-native run-ios
+npm run ios
 ```
 
-### Firebase Setup
+### Android
 ```bash
-# Install Firebase dependencies
-npm install @react-native-firebase/app @react-native-firebase/firestore @react-native-firebase/auth
-```
-
-#### iOS Firebase Setup
-1. Get your `GoogleService-Info.plist` from Firebase Console
-2. Place it in `ios/waterApp/`
-3. Add it to Xcode project:
-   - Open Xcode
-   - Right-click on your project's "waterApp" folder
-   - "Add Files to 'waterApp'"
-   - Select GoogleService-Info.plist
-   - Ensure "Copy items if needed" is checked
-   - Add to your main app target
-
-4. Update Podfile with Firebase configurations:
-```ruby
-pod 'FirebaseCore', :modular_headers => true
-pod 'FirebaseCoreInternal', :modular_headers => true
-pod 'GoogleUtilities', :modular_headers => true
-```
-
-5. Install pods:
-```bash
-cd ios && pod install
-```
-
-## Common Issues and Solutions
-
-### 1. CocoaPods Post-Install Hook Error
-**Error:**
-```
-An error occurred while processing the post-install hook of the Podfile.
-undefined method '__apply_Xcode_12_5_M1_post_install_workaround' for an instance of Pod::Podfile
-```
-
-**Solution:**
-This error occurs due to an outdated post-install hook in the Podfile. To fix:
-1. Open `ios/Podfile`
-2. Update the post_install hook to remove the outdated M1 workaround:
-```ruby
-post_install do |installer|
-  react_native_post_install(installer)
-end
-```
-
-### 2. Metro Bundler Directory Error
-**Error:**
-```
-npm error code ENOENT
-npm error syscall open
-npm error path /Users/.../package.json
-npm error errno -2
-npm error enoent Could not read package.json
-```
-
-**Solution:**
-This occurs when trying to run Metro bundler from the wrong directory. Always ensure you're in the project root directory:
-```bash
-cd /path/to/waterApp
-npx react-native start
-```
-
-### 3. Vector Icons Not Showing
-**Error:**
-Icons appear as squares or are missing in the iOS app.
-
-**Solution:**
-1. Add RNVectorIcons to Podfile:
-```ruby
-pod 'RNVectorIcons', :path => '../node_modules/react-native-vector-icons'
-```
-
-2. Add fonts to Info.plist:
-```xml
-<key>UIAppFonts</key>
-<array>
-  <string>Ionicons.ttf</string>
-</array>
-```
-
-3. Reinstall pods:
-```bash
-cd ios && pod install
-```
-
-### 4. FlipperKit Build Error
-**Error:**
-```
-The following build commands failed:
-CompileC [...]/FlipperKit.build/Debug-iphonesimulator/FlipperKit.build/Objects-normal/arm64/FlipperPlatformWebSocket.o [...]/FlipperKit/iOS/FlipperKit/FlipperPlatformWebSocket.mm normal arm64 objective-c++ com.apple.compilers.llvm.clang.1_0.compiler
-```
-
-**Solution:**
-This error occurs due to Flipper compatibility issues with newer iOS versions. To fix:
-1. Open `ios/Podfile`
-2. Replace the Flipper configuration with:
-```ruby
-# Disable Flipper
-use_frameworks! :linkage => :static
-
-target 'YourAppName' do
-  config = use_native_modules!
-
-  use_react_native!(
-    :path => config[:reactNativePath],
-    # Disable Flipper
-    :flipper_configuration => FlipperConfiguration.disabled,
-    # An absolute path to your application root.
-    :app_path => "#{Pod::Config.instance.installation_root}/.."
-  )
-  # ... rest of your Podfile
-end
-```
-3. Clean and reinstall pods:
-```bash
-cd ios
-rm -rf Pods Podfile.lock
-pod install
-```
-
-Note: Flipper is a debugging tool, and disabling it won't affect your app's functionality.
-
-## Development Tips
-
-### Hot Reloading
-- The app supports hot reloading by default
-- Changes to your React Native code will automatically reflect in the simulator
-- If changes don't appear, try reloading the app (Cmd + R in simulator)
-
-### iOS Simulator
-- The app will launch in the default iOS simulator
-- You can specify a different simulator using the --simulator flag:
-```bash
-npx react-native run-ios --simulator="iPhone 14 Pro"
+npm run android
 ```
 
 ## Project Structure
+
 ```
 waterApp/
-├── ios/                # iOS native code
-├── android/            # Android native code
-├── src/               # React Native source code
-│   ├── screens/       # Screen components
-│   ├── services/      # Business logic and API services
-│   └── types/         # TypeScript type definitions
-├── __tests__/         # Test files
-├── node_modules/      # Dependencies
-├── package.json       # Project configuration
-└── README.md         # Project documentation
+├── src/
+│   ├── screens/          # Screen components
+│   ├── services/         # Firebase and other services
+│   ├── contexts/         # React Context providers
+│   ├── types/           # TypeScript type definitions
+│   └── components/      # Reusable components
+├── scripts/             # Admin scripts
+└── firebase-rules.md    # Firestore security rules
 ```
 
 ## Dependencies
+
 - React Native: 0.73.5
 - React: 18.2.0
 - TypeScript: 5.0.4
-- React Navigation: 6.x
-- React Native Vector Icons: 10.2.0
-- AsyncStorage: 2.1.0
-- Firebase Core: latest
-- Firebase Firestore: latest
-- Firebase Auth: latest
+- Firebase Auth: ^21.7.1
+- Firebase Firestore: ^21.7.1
+- React Navigation: ^7.x
+- React Native Vector Icons: ^10.2.0
+- AsyncStorage: ^2.1.0
+
+## Security
+
+- All sensitive files are listed in .gitignore
+- Authentication is required for all operations
+- Admin-only write permissions
+- Secure Firebase rules implementation
+
+## Development Commands
+
+```bash
+# Run on iOS simulator
+npx react-native run-ios --simulator="iPhone 16 Pro"
+
+# Create admin user
+npx ts-node --esm scripts/createAdmin.ts email password
+
+# Make existing user admin
+npx ts-node --esm scripts/makeAdmin.ts USER_UID
+```
 
 ## Contributing
+
 1. Fork the repository
 2. Create your feature branch
 3. Commit your changes
@@ -230,8 +125,11 @@ waterApp/
 5. Create a Pull Request
 
 ## License
+
 This project is licensed under the MIT License - see the LICENSE file for details
 
 
-data in the simulator:
-`find ~/Library/Developer/CoreSimulator -name "waterapp_data" 2>/dev/null`
+## Development Utilities
+
+### Finding Simulator Data
+To locate the app's data directory in the iOS simulator:
