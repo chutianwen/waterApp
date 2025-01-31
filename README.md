@@ -133,3 +133,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ### Finding Simulator Data
 To locate the app's data directory in the iOS simulator:
+```bash
+find ~/Library/Developer/CoreSimulator -name "waterapp_data" 2>/dev/null
+```
