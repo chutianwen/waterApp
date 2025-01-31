@@ -39,7 +39,7 @@ const CustomerProfileScreen = () => {
   const loadTransactions = async () => {
     try {
       setLoading(true);
-      const result = await firebase.getCustomerTransactions(customer.membershipId, 1, PAGE_SIZE);
+      const result = await firebase.searchTransactions(customer.membershipId, 1, PAGE_SIZE);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
       setPage(1);
@@ -55,7 +55,7 @@ const CustomerProfileScreen = () => {
     if (!hasMore || loading) return;
 
     try {
-      const result = await firebase.getCustomerTransactions(
+      const result = await firebase.searchTransactions(
         customer.membershipId,
         page + 1,
         PAGE_SIZE
@@ -73,7 +73,7 @@ const CustomerProfileScreen = () => {
     setRefreshing(true);
     firebase.clearCache('transactions');
     try {
-      const result = await firebase.getCustomerTransactions(customer.membershipId, 1, PAGE_SIZE, true);
+      const result = await firebase.searchTransactions(customer.membershipId, 1, PAGE_SIZE, true);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
       setPage(1);
