@@ -67,8 +67,8 @@ const TransactionScreen = () => {
       const loadedCustomers = await firebase.getCustomers(1, 100);
       setCustomers(loadedCustomers.customers);
 
-      // Load all transactions
-      const result = await firebase.getCustomerTransactions('all', 1, PAGE_SIZE);
+      // Load all transactions using searchTransactions with empty query
+      const result = await firebase.searchTransactions('', 1, PAGE_SIZE);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
       setPage(1);
@@ -85,16 +85,8 @@ const TransactionScreen = () => {
 
     try {
       setLoading(true);
-      let result;
-
-      if (searchQuery) {
-        // Load more search results
-        result = await firebase.searchTransactions(searchQuery, page + 1, PAGE_SIZE);
-      } else {
-        // Load more regular transactions
-        result = await firebase.getCustomerTransactions('all', page + 1, PAGE_SIZE);
-      }
-
+      // Use searchTransactions for both search and regular loading
+      const result = await firebase.searchTransactions(searchQuery, page + 1, PAGE_SIZE);
       setTransactions([...transactions, ...result.transactions]);
       setHasMore(result.hasMore);
       setPage(page + 1);
@@ -139,8 +131,8 @@ const TransactionScreen = () => {
       const loadedCustomers = await firebase.getCustomers(1, 100, true);
       setCustomers(loadedCustomers.customers);
 
-      // Load all transactions with force refresh
-      const result = await firebase.getCustomerTransactions('all', 1, PAGE_SIZE, true);
+      // Load all transactions using searchTransactions with empty query
+      const result = await firebase.searchTransactions('', 1, PAGE_SIZE, true);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
       setPage(1);

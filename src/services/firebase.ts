@@ -343,6 +343,9 @@ export const addTransactionAndUpdateCustomer = async (
   }
 };
 
+/**
+ * @deprecated Use searchTransactions() instead
+ */
 export const getCustomerTransactions = async (
   customerId: string,
   page: number = 1,
@@ -424,12 +427,20 @@ export const searchTransactions = async (
       };
     }
 
-    // Pad the search term to 5 digits if it's shorter
-    const paddedTerm = searchTerm.trim().padStart(5, '0');
+    // Default query to load all transactions
     let query = transactionsRef()
+    .orderBy('createdAt', 'desc')
+    .limit(pageSize + 1);
+
+    if (searchTerm != '') {
+      // Pad the search term to 5 digits if it's shorter
+      const paddedTerm = searchTerm.trim().padStart(5, '0');
+
+      query = transactionsRef()
       .where('membershipId', '==', paddedTerm)
       .orderBy('createdAt', 'desc')
       .limit(pageSize + 1);
+    }
 
     if (page > 1) {
       const prevPageKey = `search_transactions_${searchTerm}_${page - 1}`;
