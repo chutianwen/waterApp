@@ -9,8 +9,11 @@ import React from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import {TouchableOpacity} from 'react-native';
+import {TouchableOpacity, Text} from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
+import type {CompositeNavigationProp} from '@react-navigation/native';
+import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
+import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 
 import CustomersScreen from './src/screens/CustomersScreen';
 import NewCustomerScreen from './src/screens/NewCustomerScreen';
@@ -18,25 +21,16 @@ import NewTransactionScreen from './src/screens/NewTransactionScreen';
 import TransactionScreen from './src/screens/TransactionScreen';
 import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
+import {AddCustomerButton} from './src/components/AddCustomerButton';
 import {RootStackParamList, MainTabParamList} from './src/types/navigation';
 
-const Tab = createBottomTabNavigator<MainTabParamList>();
-const MainStack = createNativeStackNavigator();
-const RootStack = createNativeStackNavigator<RootStackParamList>();
+type NavigationProp = CompositeNavigationProp<
+  BottomTabNavigationProp<MainTabParamList, 'Customers'>,
+  NativeStackNavigationProp<RootStackParamList>
+>;
 
-const HistoryStack = () => {
-  return (
-    <MainStack.Navigator>
-      <MainStack.Screen 
-        name="TransactionList" 
-        component={TransactionScreen}
-        options={{
-          headerTitle: 'Transaction History',
-        }}
-      />
-    </MainStack.Navigator>
-  );
-};
+const Tab = createBottomTabNavigator<MainTabParamList>();
+const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 const TabNavigator = () => {
   return (
@@ -68,21 +62,22 @@ const TabNavigator = () => {
         name="Customers" 
         component={CustomersScreen}
         options={{
-          headerShown: false,
+          headerTitle: 'Customers',
+          headerRight: () => <AddCustomerButton />,
         }}
       />
       <Tab.Screen 
         name="History" 
-        component={HistoryStack}
+        component={TransactionScreen}
         options={{
-          headerShown: false,
+          headerTitle: 'Transaction History',
         }}
       />
       <Tab.Screen 
         name="Settings" 
         component={SettingsScreen}
         options={{
-          headerShown: false,
+          headerTitle: 'Settings',
         }}
       />
     </Tab.Navigator>
@@ -92,16 +87,24 @@ const TabNavigator = () => {
 const App = () => {
   return (
     <NavigationContainer>
-      <RootStack.Navigator screenOptions={{headerShown: false}}>
+      <RootStack.Navigator>
         <RootStack.Group>
-          <RootStack.Screen name="Main" component={TabNavigator} />
+          <RootStack.Screen 
+            name="Main" 
+            component={TabNavigator}
+            options={{headerShown: false}}
+          />
         </RootStack.Group>
 
-        <RootStack.Group screenOptions={{
-          presentation: 'modal',
-          headerShown: true,
-          headerLeft: () => null,
-        }}>
+        <RootStack.Group 
+          screenOptions={{
+            presentation: 'transparentModal',
+            animation: 'fade',
+            contentStyle: {backgroundColor: 'transparent'},
+            headerShown: true,
+            headerTransparent: true,
+            headerLeft: () => null,
+          }}>
           <RootStack.Screen 
             name="New Customer" 
             component={NewCustomerScreen}

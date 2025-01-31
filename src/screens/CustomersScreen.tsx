@@ -265,16 +265,6 @@ const CustomersScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Customers</Text>
-        <TouchableOpacity 
-          style={styles.addButton}
-          onPress={() => navigation.navigate('New Customer')}>
-          <Icon name="person-add-outline" size={24} color="#007AFF" />
-          <Text style={styles.addButtonText}>Add New</Text>
-        </TouchableOpacity>
-      </View>
-      
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
@@ -360,31 +350,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#F8F9FA',
     padding: 16,
   },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 20,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: '700',
-    color: '#333',
-    marginLeft: 16,
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    padding: 8,
-  },
-  addButtonText: {
-    color: '#007AFF',
-    fontSize: 16,
-    fontWeight: '600',
-  },
   searchContainer: {
     marginBottom: 16,
+    marginTop: 16,
   },
   searchInputContainer: {
     flexDirection: 'row',
