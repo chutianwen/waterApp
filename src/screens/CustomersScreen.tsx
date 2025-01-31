@@ -370,6 +370,7 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: '#333',
+    marginLeft: 16,
   },
   addButton: {
     flexDirection: 'row',
