@@ -14,8 +14,6 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import type {CompositeNavigationProp} from '@react-navigation/native';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import { SortProvider, useSortContext } from './src/context/SortContext';
-
 import CustomersScreen from './src/screens/CustomersScreen';
 import NewCustomerScreen from './src/screens/NewCustomerScreen';
 import NewTransactionScreen from './src/screens/NewTransactionScreen';
@@ -32,21 +30,6 @@ type NavigationProp = CompositeNavigationProp<
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
-
-const SortButton = () => {
-  const { sortBy, toggleSort } = useSortContext();
-  return (
-    <TouchableOpacity
-      style={{ marginLeft: 16 }}
-      onPress={toggleSort}>
-      <Icon 
-        name={sortBy === 'name' ? 'text' : 'time'} 
-        size={24} 
-        color="#007AFF" 
-      />
-    </TouchableOpacity>
-  );
-};
 
 const TabNavigator = () => {
   return (
@@ -111,7 +94,6 @@ const TabNavigator = () => {
 const App = () => {
   return (
     <NavigationContainer>
-      <SortProvider>
         <RootStack.Navigator>
           <RootStack.Group>
             <RootStack.Screen 
@@ -171,7 +153,6 @@ const App = () => {
             />
           </RootStack.Group>
         </RootStack.Navigator>
-      </SortProvider>
     </NavigationContainer>
   );
 };

@@ -17,13 +17,11 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Customer} from '../types/customer';
 import {RootStackParamList} from '../types/navigation';
 import * as firebase from '../services/firebase';
-import { useSortContext } from '../context/SortContext';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const CustomersScreen = () => {
   const navigation = useNavigation<NavigationProp>();
-  const { sortBy } = useSortContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
