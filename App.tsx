@@ -18,22 +18,23 @@ import NewTransactionScreen from './src/screens/NewTransactionScreen';
 import TransactionScreen from './src/screens/TransactionScreen';
 import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
 import SettingsScreen from './src/screens/SettingsScreen';
-import {RootStackParamList} from './src/types/navigation';
+import {RootStackParamList, MainTabParamList} from './src/types/navigation';
 
-const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator<RootStackParamList>();
+const Tab = createBottomTabNavigator<MainTabParamList>();
+const MainStack = createNativeStackNavigator();
+const RootStack = createNativeStackNavigator<RootStackParamList>();
 
 const HistoryStack = () => {
   return (
-    <Stack.Navigator>
-      <Stack.Screen 
+    <MainStack.Navigator>
+      <MainStack.Screen 
         name="TransactionList" 
         component={TransactionScreen}
         options={{
           headerTitle: 'Transaction History',
         }}
       />
-    </Stack.Navigator>
+    </MainStack.Navigator>
   );
 };
 
@@ -45,7 +46,7 @@ const TabNavigator = () => {
           let iconName: string;
 
           switch (route.name) {
-            case 'CustomersList':
+            case 'Customers':
               iconName = focused ? 'people' : 'people-outline';
               break;
             case 'History':
@@ -64,10 +65,9 @@ const TabNavigator = () => {
         tabBarInactiveTintColor: '#666',
       })}>
       <Tab.Screen 
-        name="CustomersList" 
+        name="Customers" 
         component={CustomersScreen}
         options={{
-          title: 'Customers',
           headerShown: false,
         }}
       />
@@ -75,7 +75,6 @@ const TabNavigator = () => {
         name="History" 
         component={HistoryStack}
         options={{
-          title: 'History',
           headerShown: false,
         }}
       />
@@ -93,63 +92,57 @@ const TabNavigator = () => {
 const App = () => {
   return (
     <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
+      <RootStack.Navigator screenOptions={{headerShown: false}}>
+        <RootStack.Group>
+          <RootStack.Screen name="Main" component={TabNavigator} />
+        </RootStack.Group>
+
+        <RootStack.Group screenOptions={{
+          presentation: 'modal',
+          headerShown: true,
+          headerLeft: () => null,
         }}>
-        <Stack.Screen 
-          name="Main" 
-          component={TabNavigator} 
-        />
-        <Stack.Screen 
-          name="New Customer" 
-          component={NewCustomerScreen}
-          options={({navigation}) => ({
-            presentation: 'modal',
-            headerShown: true,
-            headerLeft: () => null,
-            headerRight: () => (
-              <TouchableOpacity 
-                onPress={() => navigation.goBack()}
-                style={{padding: 8}}>
-                <Icon name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            ),
-          })}
-        />
-        <Stack.Screen 
-          name="New Transaction" 
-          component={NewTransactionScreen}
-          options={({navigation}) => ({
-            presentation: 'modal',
-            headerShown: true,
-            headerLeft: () => null,
-            headerRight: () => (
-              <TouchableOpacity 
-                onPress={() => navigation.goBack()}
-                style={{padding: 8}}>
-                <Icon name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            ),
-          })}
-        />
-        <Stack.Screen 
-          name="Customer Profile" 
-          component={CustomerProfileScreen}
-          options={({navigation}) => ({
-            presentation: 'modal',
-            headerShown: true,
-            headerLeft: () => null,
-            headerRight: () => (
-              <TouchableOpacity 
-                onPress={() => navigation.goBack()}
-                style={{padding: 8}}>
-                <Icon name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            ),
-          })}
-        />
-      </Stack.Navigator>
+          <RootStack.Screen 
+            name="New Customer" 
+            component={NewCustomerScreen}
+            options={({navigation}) => ({
+              headerRight: () => (
+                <TouchableOpacity 
+                  onPress={() => navigation.goBack()}
+                  style={{padding: 8}}>
+                  <Icon name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              ),
+            })}
+          />
+          <RootStack.Screen 
+            name="New Transaction" 
+            component={NewTransactionScreen}
+            options={({navigation}) => ({
+              headerRight: () => (
+                <TouchableOpacity 
+                  onPress={() => navigation.goBack()}
+                  style={{padding: 8}}>
+                  <Icon name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              ),
+            })}
+          />
+          <RootStack.Screen 
+            name="Customer Profile" 
+            component={CustomerProfileScreen}
+            options={({navigation}) => ({
+              headerRight: () => (
+                <TouchableOpacity 
+                  onPress={() => navigation.goBack()}
+                  style={{padding: 8}}>
+                  <Icon name="close" size={24} color="#333" />
+                </TouchableOpacity>
+              ),
+            })}
+          />
+        </RootStack.Group>
+      </RootStack.Navigator>
     </NavigationContainer>
   );
 };

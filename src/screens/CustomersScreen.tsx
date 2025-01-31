@@ -117,7 +117,7 @@ const CustomersScreen = () => {
   const handleViewCustomerProfile = () => {
     const customer = customers.find(c => c.id === selectedCustomerId);
     if (customer) {
-      navigation.navigate('Customer Profile', { customer });
+        navigation.navigate('Customer Profile', { customer });
       setShowOptions(false);
     }
   };
