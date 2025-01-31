@@ -114,7 +114,7 @@ const CustomersScreen = () => {
     setShowOptions(true);
   };
 
-  const handleViewTransactions = () => {
+  const handleViewCustomerProfile = () => {
     const customer = customers.find(c => c.id === selectedCustomerId);
     if (customer) {
       navigation.navigate('Customer Profile', { customer });
@@ -134,16 +134,24 @@ const CustomersScreen = () => {
   const handleSaveName = async () => {
     if (!selectedCustomerId || !editingName.trim()) return;
 
+    const customer = customers.find(c => c.id === selectedCustomerId);
+    if (!customer) return;
+
     try {
       setLoading(true);
-      await firebase.updateCustomer(selectedCustomerId, { name: editingName.trim() });
+      await firebase.updateCustomer(selectedCustomerId, { 
+        name: editingName.trim(),
+        membershipId: customer.membershipId,
+        balance: customer.balance,
+        updatedAt: new Date().toISOString()
+      });
       
       // Update local state
       setCustomers(prevCustomers =>
-        prevCustomers.map(customer =>
-          customer.id === selectedCustomerId
-            ? { ...customer, name: editingName.trim() }
-            : customer
+        prevCustomers.map(c =>
+          c.id === selectedCustomerId
+            ? { ...c, name: editingName.trim() }
+            : c
         )
       );
       
@@ -239,7 +247,7 @@ const CustomersScreen = () => {
           <View style={styles.optionsContainer}>
             <TouchableOpacity
               style={styles.optionItem}
-              onPress={handleViewTransactions}>
+              onPress={handleViewCustomerProfile}>
               <Icon name="time-outline" size={24} color="#333" />
               <Text style={styles.optionText}>View Profile</Text>
             </TouchableOpacity>
