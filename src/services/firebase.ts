@@ -42,6 +42,23 @@ export const clearAllCache = () => {
   Object.values(cache).forEach(cacheMap => cacheMap.clear());
 };
 
+// Helper function to get cache key for transactions
+export const getTransactionsCacheKey = (searchTerm: string, page: number) => {
+  return `search_transactions_${searchTerm}_${page}`;
+};
+
+// Helper function to get cached transactions
+export const getCachedTransactions = (searchTerm: string, page: number) => {
+  const cacheKey = getTransactionsCacheKey(searchTerm, page);
+  return cache.transactions.get(cacheKey);
+};
+
+// Helper function to check if cache is valid
+export const isCacheValid = (searchTerm: string, page: number) => {
+  const cacheKey = getTransactionsCacheKey(searchTerm, page);
+  return cache.transactions.has(cacheKey);
+};
+
 // Auth
 export const getCurrentUser = () => auth().currentUser;
 
@@ -146,11 +163,36 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
 
 export const updateCustomer = async (customerId: string, data: Partial<Customer>) => {
   try {
-    await customersRef().doc(customerId).update({
+    const batch = db.batch();
+
+    // Update customer
+    const customerRef = customersRef().doc(customerId);
+    batch.update(customerRef, {
       ...data,
       lastTransaction: serverTimestamp(),
     });
+
+    // If name is being updated, update all related transactions
+    if (data.name) {
+      // Get all transactions for this customer
+      const transactionsSnapshot = await transactionsRef()
+        .where('customerId', '==', customerId)
+        .get();
+
+      // Update customerName in all transactions
+      transactionsSnapshot.docs.forEach(doc => {
+        batch.update(doc.ref, {
+          customerName: data.name
+        });
+      });
+    }
+
+    // Commit all updates
+    await batch.commit();
+
+    // Clear caches
     clearCache('customers');
+    clearCache('transactions');
   } catch (error) {
     console.error('Error updating customer:', error);
     throw error;
@@ -300,6 +342,7 @@ export const addTransactionAndUpdateCustomer = async (
       ...cleanTransaction,
       customerId: transaction.customerId,
       membershipId: customerData.membershipId,
+      customerName: customerData.name,
       customerBalance: transaction.customerBalance,
       amount: transaction.amount,
       type: transaction.type,
@@ -329,6 +372,7 @@ export const addTransactionAndUpdateCustomer = async (
         ...cleanTransaction,
         customerId: transaction.customerId,
         membershipId: customerData.membershipId,
+        customerName: customerData.name,
         customerBalance: transaction.customerBalance,
         amount: transaction.amount,
         type: transaction.type,

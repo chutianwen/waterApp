@@ -7,50 +7,33 @@ import {
   TextInput,
   FlatList,
   ActivityIndicator,
-  TouchableOpacity,
   Alert,
 } from 'react-native';
 import Icon from 'react-native-vector-icons/Ionicons';
 import {Transaction} from '../types/transaction';
 import * as firebase from '../services/firebase';
-import {useRoute, useNavigation} from '@react-navigation/native';
-import {useFocusEffect} from '@react-navigation/native';
-import type {RouteProp} from '@react-navigation/native';
-import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
-import {RootStackParamList} from '../types/navigation';
-import {Customer} from '../types/customer';
+import {useNavigation, useFocusEffect} from '@react-navigation/native';
+import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
+import { MainTabParamList } from '../types/navigation';
 
-type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
-type TransactionScreenRouteProp = RouteProp<RootStackParamList, 'History'>;
+type NavigationProp = BottomTabNavigationProp<MainTabParamList>;
 
 const PAGE_SIZE = 20;
 
 const TransactionScreen = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
-  const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const route = useRoute<TransactionScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
 
   // Load data when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
-      const customer = route.params?.params?.customer;
-      const initialSearchTerm = route.params?.params?.searchTerm;
-
-      // If we have a customer, set their membershipId in search box
-      if (initialSearchTerm) {
-        setSearchQuery(initialSearchTerm);
-        handleSearch(initialSearchTerm);
-      } else {
-        loadInitialData();
-      }
-      
+      loadInitialData();
       return () => {
         // Clean up
         setTransactions([]);
@@ -63,11 +46,18 @@ const TransactionScreen = () => {
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      // Load customers for name display
-      const loadedCustomers = await firebase.getCustomers(1, 100);
-      setCustomers(loadedCustomers.customers);
 
-      // Load all transactions using searchTransactions with empty query
+      // Check if we can use cached data
+      const cachedData = firebase.getCachedTransactions('', 1);
+      if (cachedData && firebase.isCacheValid('', 1)) {
+        setTransactions(cachedData.data);
+        setHasMore(!!cachedData.lastDoc);
+        setPage(1);
+        setLoading(false);
+        return;
+      }
+
+      // If cache is invalid or not available, load from Firebase
       const result = await firebase.searchTransactions('', 1, PAGE_SIZE);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
@@ -85,7 +75,18 @@ const TransactionScreen = () => {
 
     try {
       setLoading(true);
-      // Use searchTransactions for both search and regular loading
+
+      // Check if we can use cached data for pagination
+      const cachedData = firebase.getCachedTransactions(searchQuery, page + 1);
+      if (cachedData && firebase.isCacheValid(searchQuery, page + 1)) {
+        setTransactions([...transactions, ...cachedData.data]);
+        setHasMore(!!cachedData.lastDoc);
+        setPage(page + 1);
+        setLoading(false);
+        return;
+      }
+
+      // If cache is invalid or not available, load from Firebase
       const result = await firebase.searchTransactions(searchQuery, page + 1, PAGE_SIZE);
       setTransactions([...transactions, ...result.transactions]);
       setHasMore(result.hasMore);
@@ -109,7 +110,17 @@ const TransactionScreen = () => {
         return;
       }
 
-      // Search transactions by membership ID
+      // Check if we can use cached search results
+      const cachedData = firebase.getCachedTransactions(query.trim(), 1);
+      if (cachedData && firebase.isCacheValid(query.trim(), 1)) {
+        setTransactions(cachedData.data);
+        setHasMore(!!cachedData.lastDoc);
+        setPage(1);
+        setLoading(false);
+        return;
+      }
+
+      // If cache is invalid or not available, search in Firebase
       const result = await firebase.searchTransactions(query.trim(), 1, PAGE_SIZE);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
@@ -125,13 +136,9 @@ const TransactionScreen = () => {
   const handleRefresh = async () => {
     setRefreshing(true);
     setSearchQuery(''); // Clear search
-    firebase.clearCache('transactions'); // Clear cache
+    firebase.clearCache('transactions'); // Clear cache for manual refresh
     try {
-      // Load customers for name display
-      const loadedCustomers = await firebase.getCustomers(1, 100, true);
-      setCustomers(loadedCustomers.customers);
-
-      // Load all transactions using searchTransactions with empty query
+      // Always load from Firebase for manual refresh
       const result = await firebase.searchTransactions('', 1, PAGE_SIZE, true);
       setTransactions(result.transactions);
       setHasMore(result.hasMore);
@@ -150,24 +157,20 @@ const TransactionScreen = () => {
   };
 
   const renderTransactionItem = ({item}: {item: Transaction}) => {
-    const customer = customers.find(c => c.id === item.customerId);
+    if (!item.createdAt) return null;
+    
     return (
       <View style={styles.transactionItem}>
         <View style={styles.transactionHeader}>
           <View style={styles.customerInfo}>
-            <Text style={styles.customerName}>
-              {customer?.name || 'Unknown Customer'}
-            </Text>
-            <Text style={styles.customerId}>
-              #{item.membershipId || ''}
-            </Text>
-            <Text style={styles.time}>{item.createdAt ? formatDate(item.createdAt) : 'Unknown date'}</Text>
+            <Text style={styles.customerName}>{item.customerName || item.membershipId}</Text>
+            <Text style={styles.customerId}>#{item.membershipId}</Text>
+            <Text style={styles.time}>{formatDate(item.createdAt)}</Text>
           </View>
           <Text style={[styles.amount, item.type === 'fund' && styles.fundAmount]}>
             {item.type === 'fund' ? '+' : '-'}${item.amount.toFixed(2)}
           </Text>
         </View>
-        
         <View style={styles.transactionDetails}>
           <View style={styles.detailsLeft}>
             <Text style={styles.type}>
@@ -176,7 +179,7 @@ const TransactionScreen = () => {
             </Text>
           </View>
           <Text style={styles.newBalance}>
-            New Balance: ${item.customerBalance.toFixed(2)}
+            Balance: ${item.customerBalance.toFixed(2)}
           </Text>
         </View>
         {item.notes && (
@@ -199,22 +202,14 @@ const TransactionScreen = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
-          <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
+          <Icon name="search-outline" size={20} color="#8E8E93" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search by membership ID"
             value={searchQuery}
-            onChangeText={text => {
-              // Only allow digits
-              const numericText = text.replace(/[^0-9]/g, '');
-              handleSearch(numericText);
-            }}
-            autoCapitalize="none"
-            autoCorrect={false}
-            clearButtonMode="while-editing"
-            returnKeyType="search"
+            onChangeText={handleSearch}
             keyboardType="numeric"
-            maxLength={5}
+            clearButtonMode="while-editing"
           />
         </View>
       </View>
@@ -227,14 +222,13 @@ const TransactionScreen = () => {
         <FlatList
           data={transactions}
           renderItem={renderTransactionItem}
-          keyExtractor={item => item.id || ''}
-          contentContainerStyle={styles.listContainer}
-          showsVerticalScrollIndicator={false}
+          keyExtractor={(item) => `${item.id || Date.now()}-${item.createdAt || Date.now()}`}
           onEndReached={loadMoreTransactions}
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
           refreshing={refreshing}
           onRefresh={handleRefresh}
+          contentContainerStyle={styles.listContainer}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No transactions found</Text>
@@ -282,7 +276,6 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     marginRight: 8,
-    color: '#8E8E93',
   },
   searchInput: {
     flex: 1,

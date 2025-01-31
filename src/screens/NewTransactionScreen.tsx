@@ -197,6 +197,8 @@ const NewTransactionScreen = () => {
         customerBalance: newBalance,
         notes: note.trim(),
         gallons: transactionType === 'fund' ? undefined : gallons,
+        customerName: currentCustomer.name,
+        membershipId: currentCustomer.membershipId,
       };
 
       // Create transaction record and update customer in a batch

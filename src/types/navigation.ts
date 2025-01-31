@@ -9,7 +9,6 @@ export type MainTabParamList = {
 
 export type RootStackParamList = {
   Main: undefined;
-  TransactionList: undefined;
   'New Customer': undefined;
   'New Transaction': {
     customer: Customer;
