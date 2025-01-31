@@ -9,17 +9,19 @@ import React from 'react';
 import {NavigationContainer} from '@react-navigation/native';
 import {createBottomTabNavigator} from '@react-navigation/bottom-tabs';
 import {createNativeStackNavigator} from '@react-navigation/native-stack';
-import Icon from 'react-native-vector-icons/Ionicons';
 import {TouchableOpacity} from 'react-native';
+import Icon from 'react-native-vector-icons/Ionicons';
 
 import CustomersScreen from './src/screens/CustomersScreen';
-import TransactionScreen from './src/screens/TransactionScreen';
-import NewTransactionScreen from './src/screens/NewTransactionScreen';
-import SettingsScreen from './src/screens/SettingsScreen';
 import NewCustomerScreen from './src/screens/NewCustomerScreen';
+import NewTransactionScreen from './src/screens/NewTransactionScreen';
+import TransactionScreen from './src/screens/TransactionScreen';
+import CustomerProfileScreen from './src/screens/CustomerProfileScreen';
+import SettingsScreen from './src/screens/SettingsScreen';
+import {RootStackParamList} from './src/types/navigation';
 
 const Tab = createBottomTabNavigator();
-const Stack = createNativeStackNavigator();
+const Stack = createNativeStackNavigator<RootStackParamList>();
 
 const HistoryStack = () => {
   return (
@@ -27,7 +29,9 @@ const HistoryStack = () => {
       <Stack.Screen 
         name="TransactionList" 
         component={TransactionScreen}
-        options={{headerShown: false}}
+        options={{
+          headerTitle: 'Transaction History',
+        }}
       />
     </Stack.Navigator>
   );
@@ -58,43 +62,44 @@ const TabNavigator = () => {
         },
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: '#666',
-        headerShown: false,
       })}>
       <Tab.Screen 
         name="CustomersList" 
         component={CustomersScreen}
-        options={{title: 'Customers'}}
+        options={{
+          title: 'Customers',
+          headerShown: false,
+        }}
       />
       <Tab.Screen 
         name="History" 
         component={HistoryStack}
-        options={{title: 'History'}} 
+        options={{
+          title: 'History',
+          headerShown: false,
+        }}
       />
-      <Tab.Screen name="Settings" component={SettingsScreen} />
+      <Tab.Screen 
+        name="Settings" 
+        component={SettingsScreen}
+        options={{
+          headerShown: false,
+        }}
+      />
     </Tab.Navigator>
   );
 };
 
-function App(): React.JSX.Element {
+const App = () => {
   return (
     <NavigationContainer>
-      <Stack.Navigator screenOptions={{headerShown: false}}>
-        <Stack.Screen name="Main" component={TabNavigator} />
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+        }}>
         <Stack.Screen 
-          name="New Transaction" 
-          component={NewTransactionScreen}
-          options={({navigation}) => ({
-            presentation: 'modal',
-            headerShown: true,
-            headerLeft: () => null,
-            headerRight: () => (
-              <TouchableOpacity 
-                onPress={() => navigation.goBack()}
-                style={{padding: 8}}>
-                <Icon name="close" size={24} color="#333" />
-              </TouchableOpacity>
-            ),
-          })}
+          name="Main" 
+          component={TabNavigator} 
         />
         <Stack.Screen 
           name="New Customer" 
@@ -112,9 +117,41 @@ function App(): React.JSX.Element {
             ),
           })}
         />
+        <Stack.Screen 
+          name="New Transaction" 
+          component={NewTransactionScreen}
+          options={({navigation}) => ({
+            presentation: 'modal',
+            headerShown: true,
+            headerLeft: () => null,
+            headerRight: () => (
+              <TouchableOpacity 
+                onPress={() => navigation.goBack()}
+                style={{padding: 8}}>
+                <Icon name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            ),
+          })}
+        />
+        <Stack.Screen 
+          name="Customer Profile" 
+          component={CustomerProfileScreen}
+          options={({navigation}) => ({
+            presentation: 'modal',
+            headerShown: true,
+            headerLeft: () => null,
+            headerRight: () => (
+              <TouchableOpacity 
+                onPress={() => navigation.goBack()}
+                style={{padding: 8}}>
+                <Icon name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            ),
+          })}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
-}
+};
 
 export default App;

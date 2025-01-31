@@ -26,13 +26,14 @@ type TransactionScreenRouteProp = RouteProp<RootStackParamList, 'History'>;
 const PAGE_SIZE = 20;
 
 const TransactionScreen = () => {
+  const [searchQuery, setSearchQuery] = useState('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const route = useRoute<TransactionScreenRouteProp>();
   const navigation = useNavigation<NavigationProp>();
 
@@ -47,12 +48,7 @@ const TransactionScreen = () => {
         setSearchQuery(initialSearchTerm);
         handleSearch(initialSearchTerm);
       } else {
-        // If we have a customer, load only their transactions
-        if (customer) {
-          loadCustomerTransactions(customer.id);
-        } else {
-          loadInitialData();
-        }
+        loadInitialData();
       }
       
       return () => {
@@ -84,26 +80,6 @@ const TransactionScreen = () => {
     }
   };
 
-  const loadCustomerTransactions = async (customerId: string) => {
-    try {
-      setLoading(true);
-      // Load customers for name display
-      const loadedCustomers = await firebase.getCustomers(1, 100);
-      setCustomers(loadedCustomers.customers);
-
-      // Load specific customer's transactions
-      const result = await firebase.getCustomerTransactions(customerId, 1, PAGE_SIZE);
-      setTransactions(result.transactions);
-      setHasMore(result.hasMore);
-      setPage(1);
-    } catch (error) {
-      console.error('Error loading customer transactions:', error);
-      Alert.alert('Error', 'Failed to load transactions. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const loadMoreTransactions = async () => {
     if (!hasMore || loading) return;
 
@@ -116,12 +92,7 @@ const TransactionScreen = () => {
         result = await firebase.searchTransactions(searchQuery, page + 1, PAGE_SIZE);
       } else {
         // Load more regular transactions
-        const customer = route.params?.params?.customer;
-        if (customer) {
-          result = await firebase.getCustomerTransactions(customer.id, page + 1, PAGE_SIZE);
-        } else {
-          result = await firebase.getCustomerTransactions('all', page + 1, PAGE_SIZE);
-        }
+        result = await firebase.getCustomerTransactions('all', page + 1, PAGE_SIZE);
       }
 
       setTransactions([...transactions, ...result.transactions]);
@@ -139,6 +110,7 @@ const TransactionScreen = () => {
     try {
       setLoading(true);
       setSearchQuery(query);
+      setIsSearching(!!query);
       
       if (!query.trim()) {
         loadInitialData();
@@ -155,6 +127,28 @@ const TransactionScreen = () => {
       Alert.alert('Error', 'Failed to search transactions. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setSearchQuery(''); // Clear search
+    firebase.clearCache('transactions'); // Clear cache
+    try {
+      // Load customers for name display
+      const loadedCustomers = await firebase.getCustomers(1, 100, true);
+      setCustomers(loadedCustomers.customers);
+
+      // Load all transactions with force refresh
+      const result = await firebase.getCustomerTransactions('all', 1, PAGE_SIZE, true);
+      setTransactions(result.transactions);
+      setHasMore(result.hasMore);
+      setPage(1);
+    } catch (error) {
+      console.error('Error refreshing transactions:', error);
+      Alert.alert('Error', 'Failed to refresh transactions. Please try again.');
+    } finally {
+      setRefreshing(false);
     }
   };
 
@@ -249,6 +243,8 @@ const TransactionScreen = () => {
           onEndReached={loadMoreTransactions}
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No transactions found</Text>

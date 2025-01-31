@@ -28,6 +28,8 @@ const CustomersScreen = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string | null>(null);
   const [showOptions, setShowOptions] = useState(false);
+  const [showEditName, setShowEditName] = useState(false);
+  const [editingName, setEditingName] = useState('');
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
@@ -115,14 +117,45 @@ const CustomersScreen = () => {
   const handleViewTransactions = () => {
     const customer = customers.find(c => c.id === selectedCustomerId);
     if (customer) {
-      navigation.navigate('History', {
-        params: {
-          customer,
-          searchTerm: customer.membershipId
-        }
-      });
+      navigation.navigate('Customer Profile', { customer });
+      setShowOptions(false);
     }
-    setShowOptions(false);
+  };
+
+  const handleEditName = () => {
+    const customer = customers.find(c => c.id === selectedCustomerId);
+    if (customer) {
+      setEditingName(customer.name);
+      setShowEditName(true);
+      setShowOptions(false);
+    }
+  };
+
+  const handleSaveName = async () => {
+    if (!selectedCustomerId || !editingName.trim()) return;
+
+    try {
+      setLoading(true);
+      await firebase.updateCustomer(selectedCustomerId, { name: editingName.trim() });
+      
+      // Update local state
+      setCustomers(prevCustomers =>
+        prevCustomers.map(customer =>
+          customer.id === selectedCustomerId
+            ? { ...customer, name: editingName.trim() }
+            : customer
+        )
+      );
+      
+      setShowEditName(false);
+      setEditingName('');
+      Alert.alert('Success', 'Customer name updated successfully');
+    } catch (error) {
+      console.error('Error updating customer name:', error);
+      Alert.alert('Error', 'Failed to update customer name');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatDate = (dateString?: string) => {
@@ -171,6 +204,57 @@ const CustomersScreen = () => {
     );
   };
 
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    setSearchQuery(''); // Clear search
+    setIsSearching(false);
+    firebase.clearCache('customers'); // Clear cache
+    try {
+      const result = await firebase.getCustomers(1, 20, true); // Force refresh
+      setCustomers(result.customers);
+      setHasMore(result.hasMore);
+      setPage(1);
+    } catch (error) {
+      console.error('Error refreshing customers:', error);
+      Alert.alert('Error', 'Failed to refresh customers. Please try again.');
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  const renderOptionsModal = () => {
+    const customer = customers.find(c => c.id === selectedCustomerId);
+    if (!customer) return null;
+
+    return (
+      <Modal
+        visible={showOptions}
+        transparent={true}
+        animationType="fade"
+        onRequestClose={() => setShowOptions(false)}>
+        <TouchableOpacity
+          style={styles.modalOverlay}
+          activeOpacity={1}
+          onPress={() => setShowOptions(false)}>
+          <View style={styles.optionsContainer}>
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={handleViewTransactions}>
+              <Icon name="time-outline" size={24} color="#333" />
+              <Text style={styles.optionText}>View Profile</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.optionItem}
+              onPress={handleEditName}>
+              <Icon name="create-outline" size={24} color="#333" />
+              <Text style={styles.optionText}>Edit Name</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -212,6 +296,8 @@ const CustomersScreen = () => {
           onEndReached={loadMoreCustomers}
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
+          refreshing={refreshing}
+          onRefresh={handleRefresh}
           ListEmptyComponent={() => (
             <View style={styles.emptyContainer}>
               <Text style={styles.emptyText}>No customers found</Text>
@@ -220,22 +306,39 @@ const CustomersScreen = () => {
         />
       )}
 
+      {renderOptionsModal()}
+
       <Modal
-        visible={showOptions}
+        visible={showEditName}
         transparent={true}
         animationType="fade"
-        onRequestClose={() => setShowOptions(false)}>
+        onRequestClose={() => setShowEditName(false)}>
         <TouchableOpacity
           style={styles.modalOverlay}
           activeOpacity={1}
-          onPress={() => setShowOptions(false)}>
-          <View style={styles.optionsContainer}>
-            <TouchableOpacity
-              style={styles.optionItem}
-              onPress={handleViewTransactions}>
-              <Icon name="time-outline" size={24} color="#333" />
-              <Text style={styles.optionText}>Transaction Log</Text>
-            </TouchableOpacity>
+          onPress={() => setShowEditName(false)}>
+          <View style={styles.editNameContainer}>
+            <Text style={styles.editNameTitle}>Edit Customer Name</Text>
+            <TextInput
+              style={styles.editNameInput}
+              value={editingName}
+              onChangeText={setEditingName}
+              placeholder="Enter new name"
+              autoFocus
+              autoCapitalize="words"
+            />
+            <View style={styles.editNameButtons}>
+              <TouchableOpacity
+                style={[styles.editNameButton, styles.cancelButton]}
+                onPress={() => setShowEditName(false)}>
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.editNameButton, styles.saveButton]}
+                onPress={handleSaveName}>
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </TouchableOpacity>
       </Modal>
@@ -372,6 +475,55 @@ const styles = StyleSheet.create({
   footerLoader: {
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  editNameContainer: {
+    backgroundColor: '#FFF',
+    borderRadius: 12,
+    padding: 16,
+    width: '80%',
+    maxWidth: 300,
+  },
+  editNameTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  editNameInput: {
+    backgroundColor: '#F8F9FA',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 16,
+    color: '#333',
+    marginBottom: 16,
+  },
+  editNameButtons: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  editNameButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  cancelButton: {
+    backgroundColor: '#F8F9FA',
+  },
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  saveButton: {
+    backgroundColor: '#007AFF',
+  },
+  saveButtonText: {
+    color: '#FFF',
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

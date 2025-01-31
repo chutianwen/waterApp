@@ -332,6 +332,10 @@ const NewTransactionScreen = () => {
                 style={styles.fundInput}
                 value={fundAmount}
                 onChangeText={(value) => {
+                  // Only allow numbers and one decimal point
+                  if (!/^\d*\.?\d*$/.test(value)) {
+                    return;
+                  }
                   setFundAmount(value);
                   setAdjustedAmount(value); // Keep both values in sync for fund type
                 }}
