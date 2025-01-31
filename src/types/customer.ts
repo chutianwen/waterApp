@@ -6,4 +6,5 @@ export type Customer = {
   lastTransaction?: string;
   createdAt?: string;
   updatedAt?: string;
+  nameLowerCase?: string;
 }; 

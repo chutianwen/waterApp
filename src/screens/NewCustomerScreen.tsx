@@ -22,37 +22,37 @@ const NewCustomerScreen = () => {
   const [initialFund, setInitialFund] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const handleCreateCustomer = async () => {
-    if (!name.trim()) {
-      Alert.alert('Error', 'Please enter customer name');
-      return;
-    }
-
-    const fundAmount = parseFloat(initialFund);
-    if (isNaN(fundAmount) || fundAmount < 0) {
-      Alert.alert('Error', 'Please enter a valid initial fund amount');
-      return;
-    }
+  const handleSubmit = async () => {
+    if (loading) return;
 
     try {
       setLoading(true);
-      const newCustomer = {
+      const { customer, initialTransactionId } = await firebase.addCustomer({
         name: name.trim(),
-        balance: fundAmount,
-        updatedAt: new Date().toISOString(),
-      };
+        balance: Number(initialFund) || 0,
+        membershipId: '',
+      });
 
-      await firebase.addCustomer(newCustomer);
-      Alert.alert(
-        'Success',
-        'Customer created successfully!',
-        [
+      // Clear Firebase cache to ensure fresh data
+      firebase.clearCache('customers');
+      firebase.clearCache('transactions');
+
+      // Navigate to History tab with highlight if there's an initial transaction
+      navigation.reset({
+        index: 0,
+        routes: [
           {
-            text: 'OK',
-            onPress: () => navigation.goBack(),
-          },
-        ],
-      );
+            name: 'Main',
+            params: {
+              screen: 'History',
+              params: initialTransactionId ? { 
+                highlightTransactionId: initialTransactionId 
+              } : undefined
+            }
+          }
+        ]
+      });
+
     } catch (error) {
       console.error('Error creating customer:', error);
       Alert.alert('Error', 'Failed to create customer. Please try again.');
@@ -96,7 +96,7 @@ const NewCustomerScreen = () => {
 
         <TouchableOpacity 
           style={[styles.createButton, loading && styles.createButtonDisabled]}
-          onPress={handleCreateCustomer}
+          onPress={handleSubmit}
           disabled={loading}>
           {loading ? (
             <ActivityIndicator color="#FFF" />

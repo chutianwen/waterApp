@@ -49,23 +49,23 @@ const CustomersScreen = () => {
     }, [])
   );
 
-  const sortCustomers = (customersToSort: Customer[]) => {
-    return [...customersToSort].sort((a, b) => {
-      if (sortBy === 'name') {
-        return a.name.localeCompare(b.name);
-      } else {
-        const dateA = a.lastTransaction ? new Date(a.lastTransaction).getTime() : 0;
-        const dateB = b.lastTransaction ? new Date(b.lastTransaction).getTime() : 0;
-        return dateB - dateA;
-      }
-    });
-  };
+  // const sortCustomers = (customersToSort: Customer[]) => {
+  //   return [...customersToSort].sort((a, b) => {
+  //     if (sortBy === 'name') {
+  //       return a.name.localeCompare(b.name);
+  //     } else {
+  //       const dateA = a.lastTransaction ? new Date(a.lastTransaction).getTime() : 0;
+  //       const dateB = b.lastTransaction ? new Date(b.lastTransaction).getTime() : 0;
+  //       return dateB - dateA;
+  //     }
+  //   });
+  // };
 
   const loadInitialData = async () => {
     try {
       setLoading(true);
       const result = await firebase.getCustomers(1);
-      setCustomers(sortCustomers(result.customers));
+      setCustomers(result.customers);
     } catch (error) {
       console.error('Error loading customers:', error);
       Alert.alert('Error', 'Failed to load customers. Please try again.');
@@ -99,7 +99,7 @@ const CustomersScreen = () => {
         return;
       }
       const results = await firebase.searchCustomers(query);
-      setCustomers(sortCustomers(results));
+      setCustomers(results);
     } catch (error) {
       console.error('Error searching customers:', error);
       Alert.alert('Error', 'Failed to search customers. Please try again.');
@@ -146,7 +146,8 @@ const CustomersScreen = () => {
       await firebase.updateCustomer(selectedCustomerId, { 
         name: editingName.trim(),
         membershipId: customer.membershipId,
-        balance: customer.balance
+        balance: customer.balance,
+        nameLowerCase: editingName.trim().toLowerCase()
       });
       
       // Update local state
@@ -219,7 +220,7 @@ const CustomersScreen = () => {
     setRefreshing(true);
     try {
       const result = await firebase.getCustomers(1, 20, true);
-      setCustomers(sortCustomers(result.customers));
+      setCustomers(result.customers);
     } catch (error) {
       console.error('Error refreshing customers:', error);
       Alert.alert('Error', 'Failed to refresh customers. Please try again.');
@@ -228,10 +229,10 @@ const CustomersScreen = () => {
     }
   };
 
-  // Re-sort customers when sort method changes
-  React.useEffect(() => {
-    setCustomers(sortCustomers(customers));
-  }, [sortBy]);
+  // // Re-sort customers when sort method changes
+  // React.useEffect(() => {
+  //   setCustomers(customers);
+  // }, [sortBy]);
 
   const renderOptionsModal = () => {
     const customer = customers.find(c => c.id === selectedCustomerId);

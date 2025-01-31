@@ -107,7 +107,7 @@ const getUniqueMembershipId = async (maxAttempts: number = 10): Promise<string> 
 };
 
 // Customer Operations
-export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 'lastTransaction'>) => {
+export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 'lastTransaction' | 'nameLowerCase'>) => {
   try {
     // Generate unique membershipId
     const membershipId = await getUniqueMembershipId();
@@ -125,12 +125,17 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
       id: customerRef.id,
       createdAt: timestamp,
       lastTransaction: timestamp,
+      nameLowerCase: customer.name.toLowerCase(),
     });
+
+    let initialTransactionId: string | undefined;
 
     // Create initial transaction if there's an initial balance
     if (customer.balance > 0) {
       const transactionRef = transactionsRef().doc();
+      initialTransactionId = transactionRef.id;
       batch.set(transactionRef, {
+        id: initialTransactionId,
         customerId: customerRef.id,
         membershipId,
         customerName: customer.name,
@@ -150,12 +155,15 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
 
     const now = new Date().toISOString();
     return {
-      ...customer,
-      membershipId,
-      id: customerRef.id,
-      createdAt: now,
-      lastTransaction: now,
-    } as Customer;
+      customer: {
+        ...customer,
+        membershipId,
+        id: customerRef.id,
+        createdAt: now,
+        lastTransaction: now,
+      } as Customer,
+      initialTransactionId
+    };
   } catch (error) {
     console.error('Error adding customer:', error);
     throw error;
@@ -172,21 +180,6 @@ export const updateCustomer = async (customerId: string, data: Partial<Customer>
       ...data,
       lastTransaction: serverTimestamp(),
     });
-
-    // If name is being updated, update all related transactions
-    if (data.name) {
-      // Get all transactions for this customer
-      const transactionsSnapshot = await transactionsRef()
-        .where('customerId', '==', customerId)
-        .get();
-
-      // Update customerName in all transactions
-      transactionsSnapshot.docs.forEach(doc => {
-        batch.update(doc.ref, {
-          customerName: data.name
-        });
-      });
-    }
 
     // Commit all updates
     await batch.commit();
@@ -219,7 +212,7 @@ export const getCustomers = async (
     }
 
     let query = customersRef()
-      .orderBy('lastTransaction', 'desc')
+      .orderBy('nameLowerCase')
       .limit(pageSize + 1);
 
     if (page > 1) {
@@ -275,11 +268,10 @@ export const searchCustomers = async (searchTerm: string): Promise<Customer[]> =
         .where('membershipId', '==', paddedTerm)
         .limit(20);
     } else {
-      
       query = customersRef()
-        .orderBy('name')
-        .where('name', '>=', term)
-        .where('name', '<=', term + '\uf8ff')
+        .orderBy('nameLowerCase')
+        .where('nameLowerCase', '>=', term.toLowerCase())
+        .where('nameLowerCase', '<=', term.toLowerCase() + '\uf8ff')
         .limit(20);
     }
 
@@ -649,6 +641,35 @@ export const refreshTransactions = async (customerId: string = 'all'): Promise<{
     return await getCustomerTransactions(customerId, 1);
   } catch (error) {
     console.error('Error refreshing transactions:', error);
+    throw error;
+  }
+};
+
+// Migration function
+export const migrateCustomersToLowerCase = async () => {
+  try {
+    const snapshot = await customersRef().get();
+    const batch = db.batch();
+    let count = 0;
+
+    snapshot.docs.forEach(doc => {
+      const data = doc.data();
+      if (!data.nameLowerCase) {
+        batch.update(doc.ref, {
+          nameLowerCase: data.name.toLowerCase()
+        });
+        count++;
+      }
+    });
+
+    if (count > 0) {
+      await batch.commit();
+      console.log(`Updated ${count} customers with nameLowerCase field`);
+    }
+
+    return count;
+  } catch (error) {
+    console.error('Error migrating customers:', error);
     throw error;
   }
 }; 
