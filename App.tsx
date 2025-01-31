@@ -78,11 +78,10 @@ const TabNavigator = () => {
         name="Customers"
         component={CustomersScreen}
         options={({ navigation }) => ({
-          headerLeft: () => <SortButton />,
           headerRight: () => (
             <TouchableOpacity
               style={{ marginRight: 16 }}
-              onPress={() => navigation.navigate('Main', { screen: 'New Customer' })}>
+              onPress={() => navigation.getParent()?.navigate('New Customer')}>
               <Icon name="person-add" size={20} color="#007AFF" />
             </TouchableOpacity>
           ),

@@ -133,6 +133,7 @@ export const addCustomer = async (customer: Omit<Customer, 'id' | 'createdAt' | 
       batch.set(transactionRef, {
         customerId: customerRef.id,
         membershipId,
+        customerName: customer.name,
         type: 'fund',
         amount: customer.balance,
         customerBalance: customer.balance,
