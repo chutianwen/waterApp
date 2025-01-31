@@ -205,8 +205,6 @@ const TransactionScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <Text style={styles.title}>Transaction History</Text>
-
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
           <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
@@ -288,6 +286,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 3,
     elevation: 3,
+    marginTop: 16,
   },
   searchIcon: {
     marginRight: 8,
