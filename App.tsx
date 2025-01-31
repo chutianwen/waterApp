@@ -14,6 +14,7 @@ import Icon from 'react-native-vector-icons/Ionicons';
 import type {CompositeNavigationProp} from '@react-navigation/native';
 import type {BottomTabNavigationProp} from '@react-navigation/bottom-tabs';
 import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
+import { SortProvider, useSortContext } from './src/context/SortContext';
 
 import CustomersScreen from './src/screens/CustomersScreen';
 import NewCustomerScreen from './src/screens/NewCustomerScreen';
@@ -31,6 +32,21 @@ type NavigationProp = CompositeNavigationProp<
 
 const Tab = createBottomTabNavigator<MainTabParamList>();
 const RootStack = createNativeStackNavigator<RootStackParamList>();
+
+const SortButton = () => {
+  const { sortBy, toggleSort } = useSortContext();
+  return (
+    <TouchableOpacity
+      style={{ marginLeft: 16 }}
+      onPress={toggleSort}>
+      <Icon 
+        name={sortBy === 'name' ? 'text' : 'time'} 
+        size={24} 
+        color="#007AFF" 
+      />
+    </TouchableOpacity>
+  );
+};
 
 const TabNavigator = () => {
   return (
@@ -58,13 +74,22 @@ const TabNavigator = () => {
         tabBarActiveTintColor: '#007AFF',
         tabBarInactiveTintColor: '#666',
       })}>
-      <Tab.Screen 
-        name="Customers" 
+      <Tab.Screen
+        name="Customers"
         component={CustomersScreen}
-        options={{
-          headerTitle: 'Customers',
-          headerRight: () => <AddCustomerButton />,
-        }}
+        options={({ navigation }) => ({
+          headerLeft: () => <SortButton />,
+          headerRight: () => (
+            <TouchableOpacity
+              style={{ marginRight: 16 }}
+              onPress={() => navigation.navigate('Main', { screen: 'New Customer' })}>
+              <Icon name="person-add" size={20} color="#007AFF" />
+            </TouchableOpacity>
+          ),
+          tabBarIcon: ({ color, size }) => (
+            <Icon name="people" size={size} color={color} />
+          ),
+        })}
       />
       <Tab.Screen 
         name="History" 
@@ -87,65 +112,67 @@ const TabNavigator = () => {
 const App = () => {
   return (
     <NavigationContainer>
-      <RootStack.Navigator>
-        <RootStack.Group>
-          <RootStack.Screen 
-            name="Main" 
-            component={TabNavigator}
-            options={{headerShown: false}}
-          />
-        </RootStack.Group>
+      <SortProvider>
+        <RootStack.Navigator>
+          <RootStack.Group>
+            <RootStack.Screen 
+              name="Main" 
+              component={TabNavigator}
+              options={{headerShown: false}}
+            />
+          </RootStack.Group>
 
-        <RootStack.Group 
-          screenOptions={{
-            presentation: 'transparentModal',
-            animation: 'fade',
-            contentStyle: {backgroundColor: 'transparent'},
-            headerShown: true,
-            headerTransparent: true,
-            headerLeft: () => null,
-          }}>
-          <RootStack.Screen 
-            name="New Customer" 
-            component={NewCustomerScreen}
-            options={({navigation}) => ({
-              headerRight: () => (
-                <TouchableOpacity 
-                  onPress={() => navigation.goBack()}
-                  style={{padding: 8}}>
-                  <Icon name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              ),
-            })}
-          />
-          <RootStack.Screen 
-            name="New Transaction" 
-            component={NewTransactionScreen}
-            options={({navigation}) => ({
-              headerRight: () => (
-                <TouchableOpacity 
-                  onPress={() => navigation.goBack()}
-                  style={{padding: 8}}>
-                  <Icon name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              ),
-            })}
-          />
-          <RootStack.Screen 
-            name="Customer Profile" 
-            component={CustomerProfileScreen}
-            options={({navigation}) => ({
-              headerRight: () => (
-                <TouchableOpacity 
-                  onPress={() => navigation.goBack()}
-                  style={{padding: 8}}>
-                  <Icon name="close" size={24} color="#333" />
-                </TouchableOpacity>
-              ),
-            })}
-          />
-        </RootStack.Group>
-      </RootStack.Navigator>
+          <RootStack.Group 
+            screenOptions={{
+              presentation: 'transparentModal',
+              animation: 'fade',
+              contentStyle: {backgroundColor: 'transparent'},
+              headerShown: true,
+              headerTransparent: true,
+              headerLeft: () => null,
+            }}>
+            <RootStack.Screen 
+              name="New Customer" 
+              component={NewCustomerScreen}
+              options={({navigation}) => ({
+                headerRight: () => (
+                  <TouchableOpacity 
+                    onPress={() => navigation.goBack()}
+                    style={{padding: 8}}>
+                    <Icon name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                ),
+              })}
+            />
+            <RootStack.Screen 
+              name="New Transaction" 
+              component={NewTransactionScreen}
+              options={({navigation}) => ({
+                headerRight: () => (
+                  <TouchableOpacity 
+                    onPress={() => navigation.goBack()}
+                    style={{padding: 8}}>
+                    <Icon name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                ),
+              })}
+            />
+            <RootStack.Screen 
+              name="Customer Profile" 
+              component={CustomerProfileScreen}
+              options={({navigation}) => ({
+                headerRight: () => (
+                  <TouchableOpacity 
+                    onPress={() => navigation.goBack()}
+                    style={{padding: 8}}>
+                    <Icon name="close" size={24} color="#333" />
+                  </TouchableOpacity>
+                ),
+              })}
+            />
+          </RootStack.Group>
+        </RootStack.Navigator>
+      </SortProvider>
     </NavigationContainer>
   );
 };

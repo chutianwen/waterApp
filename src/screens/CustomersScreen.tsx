@@ -17,11 +17,13 @@ import type {NativeStackNavigationProp} from '@react-navigation/native-stack';
 import {Customer} from '../types/customer';
 import {RootStackParamList} from '../types/navigation';
 import * as firebase from '../services/firebase';
+import { useSortContext } from '../context/SortContext';
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
 
 const CustomersScreen = () => {
   const navigation = useNavigation<NavigationProp>();
+  const { sortBy } = useSortContext();
   const [searchQuery, setSearchQuery] = useState('');
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,13 +49,23 @@ const CustomersScreen = () => {
     }, [])
   );
 
+  const sortCustomers = (customersToSort: Customer[]) => {
+    return [...customersToSort].sort((a, b) => {
+      if (sortBy === 'name') {
+        return a.name.localeCompare(b.name);
+      } else {
+        const dateA = a.lastTransaction ? new Date(a.lastTransaction).getTime() : 0;
+        const dateB = b.lastTransaction ? new Date(b.lastTransaction).getTime() : 0;
+        return dateB - dateA;
+      }
+    });
+  };
+
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const result = await firebase.getCustomers(1, 20);
-      setCustomers(result.customers);
-      setHasMore(result.hasMore);
-      setPage(1);
+      const result = await firebase.getCustomers(1);
+      setCustomers(sortCustomers(result.customers));
     } catch (error) {
       console.error('Error loading customers:', error);
       Alert.alert('Error', 'Failed to load customers. Please try again.');
@@ -79,26 +91,18 @@ const CustomersScreen = () => {
     }
   };
 
-  const handleSearch = async (text: string) => {
-    setSearchQuery(text);
-    
-    if (!text.trim()) {
-      setIsSearching(false);
-      await loadInitialData();
-      return;
-    }
-
+  const handleSearch = async (query: string) => {
+    setSearchQuery(query);
     try {
-      setIsSearching(true);
-      setLoading(true);
-      const results = await firebase.searchCustomers(text.trim());
-      setCustomers(results);
-      setHasMore(false); // No pagination for search results
+      if (!query.trim()) {
+        loadInitialData();
+        return;
+      }
+      const results = await firebase.searchCustomers(query);
+      setCustomers(sortCustomers(results));
     } catch (error) {
       console.error('Error searching customers:', error);
       Alert.alert('Error', 'Failed to search customers. Please try again.');
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -142,8 +146,7 @@ const CustomersScreen = () => {
       await firebase.updateCustomer(selectedCustomerId, { 
         name: editingName.trim(),
         membershipId: customer.membershipId,
-        balance: customer.balance,
-        updatedAt: new Date().toISOString()
+        balance: customer.balance
       });
       
       // Update local state
@@ -214,14 +217,9 @@ const CustomersScreen = () => {
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    setSearchQuery(''); // Clear search
-    setIsSearching(false);
-    firebase.clearCache('customers'); // Clear cache
     try {
-      const result = await firebase.getCustomers(1, 20, true); // Force refresh
-      setCustomers(result.customers);
-      setHasMore(result.hasMore);
-      setPage(1);
+      const result = await firebase.getCustomers(1, 20, true);
+      setCustomers(sortCustomers(result.customers));
     } catch (error) {
       console.error('Error refreshing customers:', error);
       Alert.alert('Error', 'Failed to refresh customers. Please try again.');
@@ -229,6 +227,11 @@ const CustomersScreen = () => {
       setRefreshing(false);
     }
   };
+
+  // Re-sort customers when sort method changes
+  React.useEffect(() => {
+    setCustomers(sortCustomers(customers));
+  }, [sortBy]);
 
   const renderOptionsModal = () => {
     const customer = customers.find(c => c.id === selectedCustomerId);
@@ -267,14 +270,12 @@ const CustomersScreen = () => {
     <SafeAreaView style={styles.container}>
       <View style={styles.searchContainer}>
         <View style={styles.searchInputContainer}>
-          <Icon name="search-outline" size={20} color="#666" style={styles.searchIcon} />
+          <Icon name="search-outline" size={20} color="#8E8E93" style={styles.searchIcon} />
           <TextInput
             style={styles.searchInput}
             placeholder="Search by name or membership ID"
             value={searchQuery}
             onChangeText={handleSearch}
-            autoCapitalize="none"
-            autoCorrect={false}
             clearButtonMode="while-editing"
           />
         </View>
@@ -349,6 +350,35 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#F8F9FA',
     padding: 16,
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 16,
+    backgroundColor: '#FFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E5E5EA',
+  },
+  titleContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  title: {
+    fontSize: 34,
+    fontWeight: '700',
+    color: '#1C1C1E',
+    marginLeft: 12,
+  },
+  sortButton: {
+    padding: 4,
+  },
+  addButton: {
+    padding: 8,
+    marginLeft: 16,
   },
   searchContainer: {
     marginBottom: 16,

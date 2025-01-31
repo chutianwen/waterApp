@@ -22,12 +22,10 @@ type RouteProps = BottomTabScreenProps<MainTabParamList, 'History'>['route'];
 const PAGE_SIZE = 20;
 
 const TransactionScreen = () => {
-  const [searchQuery, setSearchQuery] = useState('');
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [isSearching, setIsSearching] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [highlightedTransactionId, setHighlightedTransactionId] = useState<string | null>(null);
   const navigation = useNavigation<NavigationProp>();
@@ -99,8 +97,8 @@ const TransactionScreen = () => {
       setLoading(true);
 
       // Check if we can use cached data for pagination
-      const cachedData = firebase.getCachedTransactions(searchQuery, page + 1);
-      if (cachedData && firebase.isCacheValid(searchQuery, page + 1)) {
+      const cachedData = firebase.getCachedTransactions('', page + 1);
+      if (cachedData && firebase.isCacheValid('', page + 1)) {
         setTransactions([...transactions, ...cachedData.data]);
         setHasMore(!!cachedData.lastDoc);
         setPage(page + 1);
@@ -109,7 +107,7 @@ const TransactionScreen = () => {
       }
 
       // If cache is invalid or not available, load from Firebase
-      const result = await firebase.searchTransactions(searchQuery, page + 1, PAGE_SIZE);
+      const result = await firebase.searchTransactions('', page + 1, PAGE_SIZE);
       setTransactions([...transactions, ...result.transactions]);
       setHasMore(result.hasMore);
       setPage(page + 1);
@@ -121,43 +119,8 @@ const TransactionScreen = () => {
     }
   };
 
-  const handleSearch = async (query: string) => {
-    try {
-      setLoading(true);
-      setSearchQuery(query);
-      setIsSearching(!!query);
-      
-      if (!query.trim()) {
-        loadInitialData();
-        return;
-      }
-
-      // Check if we can use cached search results
-      const cachedData = firebase.getCachedTransactions(query.trim(), 1);
-      if (cachedData && firebase.isCacheValid(query.trim(), 1)) {
-        setTransactions(cachedData.data);
-        setHasMore(!!cachedData.lastDoc);
-        setPage(1);
-        setLoading(false);
-        return;
-      }
-
-      // If cache is invalid or not available, search in Firebase
-      const result = await firebase.searchTransactions(query.trim(), 1, PAGE_SIZE);
-      setTransactions(result.transactions);
-      setHasMore(result.hasMore);
-      setPage(1);
-    } catch (error) {
-      console.error('Error searching transactions:', error);
-      Alert.alert('Error', 'Failed to search transactions. Please try again.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleRefresh = async () => {
     setRefreshing(true);
-    setSearchQuery(''); // Clear search
     firebase.clearCache('transactions'); // Clear cache for manual refresh
     try {
       // Always load from Firebase for manual refresh
@@ -233,19 +196,6 @@ const TransactionScreen = () => {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.searchContainer}>
-        <View style={styles.searchInputContainer}>
-          <Icon name="search-outline" size={20} color="#8E8E93" style={styles.searchIcon} />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search by membership ID"
-            value={searchQuery}
-            onChangeText={handleSearch}
-            keyboardType="numeric"
-            clearButtonMode="while-editing"
-          />
-        </View>
-      </View>
 
       {loading && transactions.length === 0 ? (
         <View style={styles.loadingContainer}>
@@ -282,40 +232,6 @@ const styles = StyleSheet.create({
     fontSize: 34,
     fontWeight: '700',
     color: '#1C1C1E',
-    marginBottom: 20,
-    marginTop: 8,
-    marginHorizontal: 16,
-  },
-  searchContainer: {
-    paddingHorizontal: 16,
-    marginBottom: 16,
-  },
-  searchInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    paddingHorizontal: 12,
-    height: 44,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.05,
-    shadowRadius: 3,
-    elevation: 3,
-    marginTop: 16,
-  },
-  searchIcon: {
-    marginRight: 8,
-  },
-  searchInput: {
-    flex: 1,
-    height: 44,
-    fontSize: 17,
-    color: '#1C1C1E',
-    fontWeight: '400',
   },
   loadingContainer: {
     flex: 1,
@@ -334,7 +250,7 @@ const styles = StyleSheet.create({
   },
   listContainer: {
     paddingHorizontal: 16,
-    paddingTop: 8,
+    paddingTop: 16,
     gap: 12,
   },
   transactionItem: {
