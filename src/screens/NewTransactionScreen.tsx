@@ -1,4 +1,5 @@
-import React, {useState} from 'react';
+import React, {useState, useEffect} from 'react';
+import type {FC} from 'react';
 import {
   SafeAreaView,
   StyleSheet,
@@ -26,7 +27,7 @@ type ScreenRouteProp = RouteProp<RootStackParamList, 'New Transaction'>;
 
 type TransactionType = Transaction['type'];
 
-const NewTransactionScreen = () => {
+const NewTransactionScreen: FC = () => {
   const navigation = useNavigation<NavigationProp>();
   const route = useRoute<ScreenRouteProp>();
   const {customer, lastTransaction} = route.params;
@@ -42,7 +43,7 @@ const NewTransactionScreen = () => {
   const [loading, setLoading] = useState(false);
   
   // Load saved prices when component mounts or comes into focus
-  React.useEffect(() => {
+  useEffect(() => {
     const loadPrices = async () => {
       try {
         const prices = await firebase.getWaterPrices();
@@ -70,19 +71,19 @@ const NewTransactionScreen = () => {
   const requiredFunds = !isBalanceSufficient ? (totalAmount - currentCustomer.balance).toFixed(2) : '0';
 
   // Update amount when calculated amount changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (!adjustedAmount || parseFloat(adjustedAmount) === calculatedAmount) {
       setAdjustedAmount(calculatedAmount.toFixed(2));
     }
   }, [calculatedAmount]);
 
   // Update balance when customer prop changes
-  React.useEffect(() => {
+  useEffect(() => {
     setCurrentCustomer(customer);
   }, [customer]);
 
   const handleIncrement = () => {
-    setGallons(prev => {
+    setGallons((prev: number) => {
       const newGallons = prev + 1;
       const newAmount = (newGallons * pricePerGallon).toFixed(2);
       setAdjustedAmount(newAmount);
@@ -92,7 +93,7 @@ const NewTransactionScreen = () => {
 
   const handleDecrement = () => {
     if (gallons > 1) {
-      setGallons(prev => {
+      setGallons((prev: number) => {
         const newGallons = prev - 1;
         const newAmount = (newGallons * pricePerGallon).toFixed(2);
         setAdjustedAmount(newAmount);
@@ -102,7 +103,7 @@ const NewTransactionScreen = () => {
   };
 
   // Update amount when gallons or price changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (transactionType !== 'fund') {
       const newAmount = (gallons * pricePerGallon).toFixed(2);
       setAdjustedAmount(newAmount);
@@ -110,7 +111,7 @@ const NewTransactionScreen = () => {
   }, [gallons, pricePerGallon, transactionType]);
 
   // Update amount when transaction type changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (transactionType === 'fund') {
       setAdjustedAmount('');
     } else {
@@ -120,7 +121,7 @@ const NewTransactionScreen = () => {
   }, [transactionType]);
 
   const checkDuplicateTransaction = () => {
-    if (!lastTransaction) return false;
+    if (!lastTransaction?.createdAt) return false;
 
     const timeDiff = Date.now() - new Date(lastTransaction.createdAt).getTime();
     const isWithin5Minutes = timeDiff < 5 * 60 * 1000;
