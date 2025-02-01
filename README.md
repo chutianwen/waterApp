@@ -63,14 +63,19 @@ npx ts-node --esm scripts/createAdmin.ts your-email@example.com your-password
 
 ### Running the App
 
-#### iOS
+#### iOS starting metro bundler
 ```bash
-npm run ios
+npx react-native start
 ```
 
-#### Android
+Clear Metro bundler cache if needed
 ```bash
-npm run android
+npx react-native start --reset-cache
+```
+
+#### Run on iOS simulator
+```bash
+npx react-native run-ios --simulator="iPhone 16 Pro"
 ```
 
 ## Project Structure
